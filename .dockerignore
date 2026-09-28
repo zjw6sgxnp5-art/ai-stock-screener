@@ -1,0 +1,12 @@
+.git
+.DS_Store
+.env
+__pycache__
+*.py[cod]
+.venv
+venv
+data
+reports
+node_modules
+dist
+build

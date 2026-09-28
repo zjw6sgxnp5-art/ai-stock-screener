@@ -1,0 +1,23 @@
+name: ai-stock-local
+
+services:
+  ai-stock:
+    build:
+      context: .
+    image: ai-stock-local:local
+    container_name: ai-stock-local
+    environment:
+      AI_STOCK_HOST: 0.0.0.0
+      AI_STOCK_PORT: "8765"
+      AI_STOCK_DB: /app/data/app.sqlite
+      LONG_BRIDGE_BIN: longbridge
+      LONG_BRIDGE_TIMEOUT: ${LONG_BRIDGE_TIMEOUT:-25}
+      AI_STOCK_LLM_MODEL: ${AI_STOCK_LLM_MODEL:-gpt-5.2}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "${AI_STOCK_HOST_PORT:-8765}:8765"
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ${HOME}/.longbridge:/root/.longbridge:ro
+    restart: unless-stopped

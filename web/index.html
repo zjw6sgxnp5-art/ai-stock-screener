@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 选股 · 机构级智能投研工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- 侧边全局导航 -->
+      <aside class="sidebar" aria-label="工作台导航">
+        <div class="brand-block">
+          <span class="brand-mark">US</span>
+          <div>
+            <strong>AI Stock Desk</strong>
+            <small>机构级美股智能投研终端</small>
+          </div>
+        </div>
+
+        <nav class="side-nav">
+          <a href="#macroCockpit" class="active">☀️ 宏观天气与日历</a>
+          <a href="#dailyPicksSection">🏆 今日推荐 (Step 2.5漏斗)</a>
+          <a href="#portfolioSection">🛡️ 组合仓位与对冲 (Step 5.5)</a>
+          <a href="#techCatalystsSection">📱 科技另类数据 (Capex核验)</a>
+          <a href="#stock360Section">🔍 单股 360 深度研判</a>
+          <a href="#scoreExplain">📊 因子拆解与排雷</a>
+          <a href="#relations">🌐 关联网络与同业</a>
+          <a href="#governance">🏛️ 治理与做空筹码</a>
+          <a href="#compare">⚖️ 多股横向对比</a>
+          <a href="#reviewArchiveSection">📓 复盘与决策归档</a>
+        </nav>
+
+        <div class="status-card" id="statusCard">
+          <span class="pulse"></span>
+          <div>
+            <strong id="modelStatusTitle">本地 CLI 智囊矩阵</strong>
+            <p id="modelStatusDesc">长桥数据 · Grok CLI · Gemini CLI</p>
+          </div>
+        </div>
+
+        <div class="sidebar-note">
+          <b>买方风控守则</b>
+          <span>“选股先看天气，覆巢之下无完卵”。严格遵循硬规则排雷 + 确定性止损防线，杜绝无依据盲从。</span>
+        </div>
+      </aside>
+
+      <!-- 主工作台 -->
+      <main class="workbench">
+        <!-- 顶栏指挥台 -->
+        <header class="topbar">
+          <div class="topbar-title">
+            <p>INSTITUTIONAL EQUITY INTELLIGENCE TERMINAL</p>
+            <h1>美股量化与大模型投研工作台</h1>
+          </div>
+
+          <div class="topbar-status">
+            <span id="lbStatusPill" class="status-pill">长桥：检测中</span>
+            <span id="grokStatusPill" class="status-pill">⚡ Grok：就绪</span>
+            <span id="geminiStatusPill" class="status-pill">🧠 Gemini：就绪</span>
+            <span id="localClock" class="clock">--:--:--</span>
+          </div>
+
+          <!-- 统一指令搜索栏 -->
+          <form id="analyzeForm" class="command-bar">
+            <label class="symbol-field" for="symbolInput">
+              <span>标的代码</span>
+              <input id="symbolInput" name="symbol" value="NVDA.US" placeholder="输入代码如 NVDA.US / META.US / TSLA.US" />
+            </label>
+            <label class="model-select-field">
+              <span>研判引擎</span>
+              <select id="modelSelector">
+                <option value="gemini" selected>🧠 Gemini CLI (深度财务长文推演)</option>
+                <option value="grok">⚡ Grok CLI (市场舆情与产品催化敏锐)</option>
+                <option value="cross">🤝 双模型交叉互审 (Grok催化 + Gemini财务)</option>
+              </select>
+            </label>
+            <button type="submit" id="btnRunDeepAnalyze" class="primary-button">🚀 启动全景深度研判</button>
+          </form>
+        </header>
+
+        <!-- 热门快捷代码条 -->
+        <section class="quick-actions">
+          <div class="examples" aria-label="核心科技与蓝筹">
+            <button type="button" data-symbol="NVDA.US">NVDA (英伟达)</button>
+            <button type="button" data-symbol="META.US">META (Meta)</button>
+            <button type="button" data-symbol="GOOGL.US">GOOGL (谷歌)</button>
+            <button type="button" data-symbol="MU.US">MU (美光)</button>
+            <button type="button" data-symbol="TSLA.US">TSLA (特斯拉)</button>
+            <button type="button" data-symbol="AAPL.US">AAPL (苹果)</button>
+            <button type="button" data-symbol="MSFT.US">MSFT (微软)</button>
+            <button type="button" data-symbol="QQQ.US">QQQ (纳指100)</button>
+          </div>
+          <div class="workflow-strip">
+            <span>1. 宏观VIX定攻防姿态</span>
+            <span>2. 每日大池轻量初筛</span>
+            <span>3. 科技产品/AppStore领先指标</span>
+            <span>4. Grok/Gemini 结构化决策备忘录</span>
+          </div>
+        </section>
+
+        <!-- 全局消息与加载指示 -->
+        <section id="errorBox" class="error hidden"></section>
+        <section id="loading" class="loading hidden">
+          <div class="loader"></div>
+          <p id="loadingText">正在并发调度本地 CLI 引擎、行情量化模型与前瞻催化清单...</p>
+        </section>
+
+        <!-- 模块一：宏观天气与波动率中枢 (Macro & VIX Weather Cockpit) -->
+        <section class="workspace-section" id="macroCockpit">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Macro Regime & Volatility Climate</p>
+              <h2>第一层：宏观天气中枢与大事件双向时间轴</h2>
+            </div>
+            <p class="section-help">选股前先看大盘趋势与 VIX 恐慌温度，决定总体仓位水准与攻防姿态。</p>
+          </div>
+
+          <!-- 宏观四卡合一面板 -->
+          <div class="macro-weather-grid">
+            <div class="weather-card index-card">
+              <div class="weather-card-head">
+                <span>标普 500 基准 (SPY)</span>
+                <span class="trend-badge" id="spyTrendBadge">均线上方多头</span>
+              </div>
+              <div class="weather-card-body">
+                <strong id="spyPrice">$572.48</strong>
+                <span id="spyChange" class="badge-success">+0.42% ▲</span>
+              </div>
+              <small id="spyNote">大盘主要指数稳居 20日/60日 均线上方</small>
+            </div>
+
+            <div class="weather-card index-card">
+              <div class="weather-card-head">
+                <span>纳斯达克 100 基准 (QQQ)</span>
+                <span class="trend-badge" id="qqqTrendBadge">科技成长顺风</span>
+              </div>
+              <div class="weather-card-body">
+                <strong id="qqqPrice">$489.15</strong>
+                <span id="qqqChange" class="badge-success">+0.65% ▲</span>
+              </div>
+              <small id="qqqNote">科技龙头流动性充沛，风险偏好旺盛</small>
+            </div>
+
+            <div class="weather-card vix-card">
+              <div class="weather-card-head">
+                <span>CBOE 恐慌波动率 (.VIX)</span>
+                <span class="vix-level-badge" id="vixLevelBadge">极度平静</span>
+              </div>
+              <div class="weather-card-body">
+                <strong id="vixValue">15.42</strong>
+                <span id="vixChange" class="badge-success">-3.85% ▼</span>
+              </div>
+              <small id="vixNote">VIX &lt; 16 处于低波动区间，市场宽容度高</small>
+            </div>
+
+            <div class="weather-card strategy-card">
+              <div class="weather-card-head">
+                <span>今日市场宏观定性</span>
+                <b id="macroRegimeTag" class="tag-pill">☀️ 顺风进攻期</b>
+              </div>
+              <div class="strategy-detail">
+                <div><span>建议基准仓位:</span> <strong id="macroExposure">75% - 90%</strong></div>
+                <div><span>今日选股偏好:</span> <b id="macroStyle">主攻高动量突破、强催化与爆款应用标的</b></div>
+              </div>
+              <p id="macroDesc" class="macro-desc">全市场流动性充沛，未现系统性抛压，适合以强势进攻龙头为主，顺风做多。</p>
+            </div>
+          </div>
+
+          <!-- 离散宏观状态机因子权重映射看板 (Step 7 防过拟合) -->
+          <div class="panel regime-matrix-panel" id="regimeMatrixPanel">
+            <div class="panel-head">
+              <span>🌪️ 宏观离散状态机与因子权重矩阵 (Step 7 根治自进化过拟合)</span>
+              <b id="activeRegimeMatrixName" class="badge-success">顺风进攻矩阵 (Risk-On Growth)</b>
+            </div>
+            <div class="regime-matrix-body">
+              <div class="regime-factor-bars" id="regimeFactorBars">
+                <!-- 动态填充因子权重条 -->
+              </div>
+              <div class="anti-overfitting-box">
+                <span class="shield-icon">🛡️</span>
+                <div>
+                  <strong>买方量化铁律：离散状态机阻断“追逐风格过拟合 (Regime Chasing)”</strong>
+                  <p id="antiChasingNote">严禁根据短周期收益线性高频调权。在顺风/中性/防御/恐慌等离散状态间切换，锁定防守与进攻风格，绝不在风格切换点被两头抽耳光。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 双向 30 天大事件时间轴 -->
+          <div class="timeline-container panel">
+            <div class="panel-head">
+              <span>📅 重大事件时间轴：回顾过去 30 天 ➔ 前瞻未来 30 天</span>
+              <b>排雷防震 · 催化倒计时</b>
+            </div>
+            <div class="timeline-split">
+              <!-- 过去 30 天复盘 -->
+              <div class="timeline-col">
+                <h4 class="timeline-title">⏪ 过去 30 天关键宏观事件复盘</h4>
+                <div id="pastEventsList" class="event-stream"></div>
+              </div>
+              <!-- 未来 30 天前瞻 -->
+              <div class="timeline-col">
+                <h4 class="timeline-title">⏩ 未来 30 天前瞻重大事件排查 (防踩雷)</h4>
+                <div id="upcomingEventsList" class="event-stream"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 模块二：今日自动推荐股票池 (Daily Screener Top Picks) -->
+        <section class="workspace-section" id="dailyPicksSection">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Funnel Compression: 612 ➔ 185 ➔ 32 ➔ 6 (Compression Ratio: 99.02%)</p>
+              <h2>第二层：Step 2.5 纯数值漏斗硬筛选 ➔ 今日核心推荐池</h2>
+            </div>
+            <p class="section-help">在调用双模型 CLI 深度推演前，执行 RS 强弱、换手流动性与 52 周新高纯数值硬闸门，压制候选池，杜绝 Token 爆炸与并发污染。</p>
+          </div>
+
+          <!-- Step 2.5 纯数值漏斗流水线监控看板 -->
+          <div class="funnel-pipeline-banner panel" id="funnelPipelineBanner">
+            <div class="funnel-step-card">
+              <span class="step-num">Step 2 初始池</span>
+              <strong>612 只</strong>
+              <small>纳指100 ∪ 标普500 ∪ 成交量前100 ∪ 异动</small>
+            </div>
+            <div class="funnel-arrow">➔</div>
+            <div class="funnel-step-card">
+              <span class="step-num">Step 2.1 流动性闸门</span>
+              <strong id="funnelLayer1Passed">185 只</strong>
+              <small>日均成交 ≥ $1.0B 且换手健康 (汰除 427 只)</small>
+            </div>
+            <div class="funnel-arrow">➔</div>
+            <div class="funnel-step-card highlight">
+              <span class="step-num">Step 2.5 数值硬规则</span>
+              <strong id="funnelLayer2Passed">32 只</strong>
+              <small>RS 相对强弱 ≥ 前20% 且 距52周新高 ≤ -25%</small>
+            </div>
+            <div class="funnel-arrow">➔</div>
+            <div class="funnel-step-card final">
+              <span class="step-num">Step 5 双模型研判池</span>
+              <strong id="funnelLayer3Passed">6 只核心标的</strong>
+              <small class="text-success">节省 91.8% Token · 严防上下文污染</small>
+            </div>
+          </div>
+
+          <!-- 推荐卡片列表网格 -->
+          <div id="dailyPicksGrid" class="daily-picks-grid"></div>
+        </section>
+
+        <!-- 模块：Step 5.5 机构级组合与仓位管理 (Portfolio Allocation & Risk Parity) -->
+        <section class="workspace-section" id="portfolioSection">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Step 5.5 Institutional Portfolio Construction &amp; Derivatives Hedge</p>
+              <h2>第五层：组合管理与波动率平价仓位算法 (行业限额 30% · 2xATR 止损 · 期权对冲)</h2>
+            </div>
+            <p class="section-help">不仅要选出好股票，更要控制行业相关性与下行敞口。单一行业上限不超过 30%，依 ATR(14) 确定头寸，配置保护性 Put 或备兑 Call。</p>
+          </div>
+
+          <!-- 仓位模拟与风控参数设置栏 -->
+          <div class="panel portfolio-control-panel">
+            <div class="portfolio-inputs-grid">
+              <label>
+                <span>组合总资金 (USD)</span>
+                <input id="portfolioTotalCapital" type="number" value="100000" step="5000" min="10000" />
+              </label>
+              <label>
+                <span>单笔最大风险容忍 (Risk Per Trade)</span>
+                <select id="portfolioRiskPct">
+                  <option value="1.0">1.0% (保守防守 - 每笔最多亏 $1,000)</option>
+                  <option value="1.5" selected>1.5% (机构标准 - 每笔最多亏 $1,500)</option>
+                  <option value="2.0">2.0% (进取进攻 - 每笔最多亏 $2,000)</option>
+                </select>
+              </label>
+              <label>
+                <span>单一行业暴露敞口硬上限</span>
+                <select id="portfolioSectorCap">
+                  <option value="25.0">25.0% (严格分散)</option>
+                  <option value="30.0" selected>30.0% (机构标准硬约束)</option>
+                  <option value="35.0">35.0% (集中进攻)</option>
+                </select>
+              </label>
+              <button type="button" id="btnRecalculatePortfolio" class="primary-button">⚡ 实时重算仓位与期权</button>
+            </div>
+
+            <!-- 组合宏观指标卡 -->
+            <div class="portfolio-metrics-summary" id="portfolioMetricsSummary">
+              <div class="stat-box"><span>计划建仓资金</span><strong id="portInvested">$81,420.00</strong></div>
+              <div class="stat-box"><span>宏观现金防守储备</span><strong id="portCash" class="badge-success">$18,580.00 (18.6%)</strong></div>
+              <div class="stat-box"><span>组合最大尾部下行风险</span><strong id="portMaxRisk" class="badge-info">8.25%</strong></div>
+              <div class="stat-box"><span>行业集中度合规状态</span><strong id="portSectorStatus" class="badge-success">已受行业 30% 上限约束</strong></div>
+            </div>
+
+            <!-- 行业敞口与仓位分配明细 -->
+            <div class="two-column-grid" style="margin-top:16px;">
+              <!-- 行业敞口进度条 -->
+              <div class="panel sub-panel">
+                <div class="panel-head"><span>各 GICS 行业总配置敞口</span><b>硬上限 ≤ 30%</b></div>
+                <div id="portfolioSectorBars" class="sector-bars-wrap"></div>
+              </div>
+              <!-- 衍生品对冲概览 -->
+              <div class="panel sub-panel">
+                <div class="panel-head"><span>现货与衍生品联动对冲原理</span><b>Protective Put / Covered Call</b></div>
+                <div class="hedge-principle-card">
+                  <div><strong>🛡️ 高 Beta 核心股 (NVDA / TSLA / META)</strong>: 匹配买入 6% OTM 保护性看跌期权 (Protective Put)，封顶下行尾部风险。</div>
+                  <div style="margin-top:8px;"><strong>📈 现金流稳健白马 (AAPL / GOOGL)</strong>: 匹配卖出 8% OTM 备兑看涨期权 (Covered Call)，单月增厚 1.5%~2.2% 确定性权利金。</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 详细持仓测算表格 -->
+            <div class="panel-table-wrap" style="margin-top:16px;">
+              <div id="portfolioAllocationsTable" class="portfolio-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 模块三：科技股另类数据与产品预期 (Tech Alternative Data) -->
+        <section class="workspace-section" id="techCatalystsSection">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Alternative Data &amp; Product Expectations</p>
+              <h2>第三层：科技股专项：App Store 榜单异动与旗舰产品前瞻</h2>
+            </div>
+            <p class="section-help">财报滞后 3 个月，而爆款 App 霸榜与旗舰大模型/硬件发布是实时的领先驱动指标。</p>
+          </div>
+
+          <div class="two-column-grid">
+            <!-- App Store 榜单动量雷达 -->
+            <article class="panel">
+              <div class="panel-head">
+                <span>📱 App Store / Google Play 核心应用榜单动量</span>
+                <b>实时 C 端热度</b>
+              </div>
+              <div class="panel-table-wrap">
+                <div id="appStoreRadarTable" class="app-radar-table"></div>
+              </div>
+            </article>
+
+            <!-- 旗舰产品路线图与预期管理 -->
+            <article class="panel">
+              <div class="panel-head">
+                <span>🔮 科技巨头旗舰产品发布路线图 (预期发酵 ➔ 落地测评)</span>
+                <b>催化剂跟踪</b>
+              </div>
+              <div id="flagshipRoadmapList" class="roadmap-list"></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 模块四：单股 360 深度研判 (Stock 360 & AI 决策备忘录) -->
+        <section class="workspace-section" id="stock360Section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Stock 360 In-Depth Research</p>
+              <h2>第四层：单股全景与 AI 买方决策备忘录</h2>
+            </div>
+            <div class="header-action-group">
+              <button type="button" id="addWatchBtn" class="ghost-button">⭐ 加入自选</button>
+              <button type="button" id="exportReportBtn" class="ghost-button">📥 导出 Markdown 研报</button>
+            </div>
+          </div>
+
+          <!-- AI 结构化买方决策研判核心卡 (短/中/长/一票否决) -->
+          <div class="ai-memo-hero panel">
+            <div class="ai-memo-header">
+              <div class="ai-title-wrap">
+                <span id="aiActiveModelBadge" class="ai-model-tag">🧠 Gemini CLI 深度研判</span>
+                <h3 id="aiMemoStockTitle">NVDA.US 全景决策备忘录</h3>
+              </div>
+              <div class="ai-memo-actions">
+                <span id="aiGeneratedTime" class="timestamp">刚刚生成</span>
+              </div>
+            </div>
+            <div id="aiMemoContent" class="ai-memo-content">
+              <div class="loading-inline">正在调度大模型生成结构化买方报告...</div>
+            </div>
+          </div>
+
+          <!-- 价格 KPI 与 综合评分网格 -->
+          <div class="overview-grid">
+            <article class="panel quote-panel">
+              <div class="panel-head">
+                <span>行情与流动性快照</span>
+                <b id="tradeStatus">交易中</b>
+              </div>
+              <div class="quote-main">
+                <h2 id="stockSymbol">NVDA.US</h2>
+                <div>
+                  <strong id="lastPrice">$128.45</strong>
+                  <span id="changePct" class="badge-success">+2.85% ▲</span>
+                </div>
+              </div>
+              <div class="metric-grid compact">
+                <div><span>成交量</span><b id="volume">35.6M</b></div>
+                <div><span>成交额</span><b id="turnover">45.8 亿</b></div>
+                <div><span>量能倍率</span><b id="volumeRatio">1.75x (放量)</b></div>
+              </div>
+            </article>
+
+            <article class="panel score-panel">
+              <div class="panel-head">
+                <span>本地多因子量化评分</span>
+                <b id="verdict">值得重点研究</b>
+              </div>
+              <div class="score-layout">
+                <div class="score-ring"><span id="score">88.5</span></div>
+                <div class="score-copy">
+                  <p id="dataQuality">覆盖 260 根日K线 · 机构级财务快照 · 做空持仓与高管全量覆盖</p>
+                  <div class="formula-mini">
+                    <span id="scoreFormula">最终评分 = 基础技术/消息分 × 60% + 全景多因子分 × 40%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="score-kpis">
+                <div><span>价格动量</span><b>85.0</b></div>
+                <div><span>基本面质量</span><b>90.0</b></div>
+                <div><span>催化剂</span><b>92.0</b></div>
+                <div><span>做空惩罚</span><b class="text-danger">-0.0</b></div>
+              </div>
+            </article>
+
+            <article class="panel brief-panel">
+              <div class="panel-head">
+                <span>规则引擎研判结论</span>
+                <b>本地确定性规则</b>
+              </div>
+              <h3 id="briefOneSentence">NVDA.US 依托全球 AI 算力垄断地位，Blackwell 需求爆发，评分 88.5/100，处于健康进攻通道。</h3>
+              <div class="brief-matrix">
+                <div>
+                  <h4>牛市正面证据</h4>
+                  <ul id="briefBull" class="signal-list"></ul>
+                </div>
+                <div>
+                  <h4>熊市风险与防守</h4>
+                  <ul id="briefBear" class="signal-list risk"></ul>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div id="dataWarnings" class="warning-strip hidden"></div>
+        </section>
+
+        <!-- 模块五：可解释多因子拆解 (Score Explain) -->
+        <section class="workspace-section" id="scoreExplain">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Factor Explainability</p>
+              <h2>第五层：多因子公式拆解与正负证据链</h2>
+            </div>
+            <p class="section-help">不当黑盒，拒绝盲从。清晰展示价格动量、流动性、基本面、估值和风险惩罚的加权明细。</p>
+          </div>
+
+          <div class="explain-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <span>因子公式加权明细</span>
+                <b id="factorFormula">多因子分 = Σ(正向因子分 × 权重) / Σ正向权重 + 风险惩罚</b>
+              </div>
+              <div id="factorList" class="factor-list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <span>全维度支持与排查清单</span>
+                <b>规则引擎证据</b>
+              </div>
+              <div class="signal-columns">
+                <div>
+                  <h4>支持做多研究证据</h4>
+                  <ul id="positives" class="signal-list"></ul>
+                </div>
+                <div>
+                  <h4>优先排查风险清单</h4>
+                  <ul id="risks" class="signal-list risk"></ul>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 模块六：技术形态、基本面与估值画像 -->
+        <section class="workspace-section">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Technical &amp; Fundamental Deep Dive</p>
+              <h2>第六层：技术面结构、财务快照与估值位置</h2>
+            </div>
+          </div>
+
+          <div class="three-column-grid">
+            <article class="panel">
+              <div class="panel-head"><span>技术面量价指标</span><b id="trendLabel">20日均线上方震荡上行</b></div>
+              <div class="metric-grid two">
+                <div><span>5日涨跌</span><b id="ret5d">+4.28%</b></div>
+                <div><span>20日涨跌</span><b id="ret20d">+8.40%</b></div>
+                <div><span>60日涨跌</span><b id="ret60d">+21.60%</b></div>
+                <div><span>RSI 14</span><b id="rsi14">58.5 (健康)</b></div>
+                <div><span>20日年化波动率</span><b id="volatility">32.5%</b></div>
+                <div><span>60日最大回撤</span><b id="drawdown">-9.8%</b></div>
+                <div><span>20日MA防线</span><b id="ma20">$123.31</b></div>
+                <div><span>60日MA防线</span><b id="ma60">$116.89</b></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><span>估值与机构目标价</span><b id="valuationPe">PE: 42.5</b></div>
+              <div class="metric-grid two">
+                <div><span>行业中位数 PE</span><b id="valuationMedian">35.0</b></div>
+                <div><span>机构综合评级</span><b id="ratingRecommend">强力买入</b></div>
+                <div><span>平均目标价</span><b id="ratingTarget">$150.00</b></div>
+                <div><span>目标价隐含空间</span><b id="targetUpside" class="badge-success">+16.8%</b></div>
+                <div><span>行业排名</span><b id="ratingRank">3 / 45</b></div>
+              </div>
+              <p id="valuationSummary" class="note">当前估值溢价受高业绩增速支撑，处于可消化区间。</p>
+            </article>
+
+            <article class="panel company-panel">
+              <div class="panel-head"><span>管理层与公司画像</span><b id="companyMarket">US Equity</b></div>
+              <h3 id="companyName">NVIDIA Corporation</h3>
+              <p id="companyProfile" class="profile">全球领先的加速计算架构平台提供商，主导全球 AI 大模型训练与推理基础设施。</p>
+              <div class="metric-grid two">
+                <div><span>CEO 掌门人</span><b id="companyCeo">黄仁勋 (Jensen Huang)</b></div>
+                <div><span>治理信赖度</span><b class="badge-success">极高 · 创始人主导</b></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 模块七：关联股票与产业链网络 -->
+        <section class="workspace-section" id="relations">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Supply Chain &amp; Peer Network</p>
+              <h2>第七层：产业链传导、同业对比与资金联动</h2>
+            </div>
+            <p class="section-help">分析供应链上下游及同业表现，验证行业景气度并寻找传导机会。</p>
+          </div>
+
+          <div class="two-column-grid">
+            <article class="panel">
+              <div class="panel-head"><span>关联节点网络</span><b>传导强度</b></div>
+              <div id="relationSummary" class="governance-summary"></div>
+              <div id="relationNetworkList" class="relation-list"></div>
+              <details open class="analysis-details">
+                <summary>联动监控触发条件</summary>
+                <ul id="relationWatchList" class="signal-list blue"></ul>
+              </details>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><span>做空筹码与排雷雷达</span><b>空头拥挤度</b></div>
+              <div class="metric-grid two">
+                <div><span>做空比例 (Short Interest)</span><b id="shortRateVal">1.20% (极低风险)</b></div>
+                <div><span>回补天数 (Days to Cover)</span><b id="daysToCoverVal">0.9 天 (无挤空风险)</b></div>
+              </div>
+              <div id="controversyList" class="news-list" style="margin-top:14px;"></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- 模块八：多股横向对比 (Compare) -->
+        <section class="workspace-section tool-section" id="compare">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Multi-Stock Compare</p>
+              <h2>多股横向量化对比矩阵</h2>
+            </div>
+            <p class="section-help">在同赛道或候选股中，快速横向对比谁的综合得分、动量、估值与确定性更优。</p>
+          </div>
+
+          <form id="compareForm" class="tool-form horizontal">
+            <label for="compareSymbols">对比股票池 (逗号分隔)</label>
+            <textarea id="compareSymbols" rows="2">NVDA.US, META.US, GOOGL.US, MU.US, TSLA.US</textarea>
+            <button type="submit" class="primary-button">⚡ 运行横向对比</button>
+          </form>
+
+          <section id="compareLoading" class="loading hidden">
+            <div class="loader"></div>
+            <p>正在计算多股对比矩阵与领头羊指标...</p>
+          </section>
+          <section id="compareError" class="error hidden"></section>
+          <section id="compareResult" class="panel result-panel hidden">
+            <div class="panel-head">
+              <span>横向对比矩阵</span>
+              <b id="compareMeta">-</b>
+            </div>
+            <div id="compareLeaders" class="method-notes"></div>
+            <div id="compareTable" class="compare-table"></div>
+          </section>
+        </section>
+
+        <!-- 模块九：决策快照与复盘自进化看板 (Review & Archive Hub) -->
+        <section class="workspace-section" id="reviewArchiveSection">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Decision Journal &amp; Self-Calibration</p>
+              <h2>第八层：全量决策快照归档与历史胜率复盘</h2>
+            </div>
+            <p class="section-help">所有系统推荐与主动提问全部实时存证归档，自动追踪 T+5 / T+20 表现与超额收益 Alpha，为模型调优提供依据。</p>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <span>决策快照档案库 (实时追踪)</span>
+              <button type="button" id="refreshReviewBtn" class="ghost-button">🔄 刷新复盘数据</button>
+            </div>
+            <div class="review-stats-summary" id="reviewStatsSummary">
+              <div class="stat-box"><span>归档决策样本</span><strong id="statTotalCount">6</strong></div>
+              <div class="stat-box"><span>平均超额收益 (Alpha)</span><strong id="statAvgAlpha" class="badge-success">+1.85%</strong></div>
+              <div class="stat-box"><span>触碰止损比例</span><strong id="statStoppedRate" class="badge-success">0.0%</strong></div>
+              <div class="stat-box"><span>模型胜率估计</span><strong id="statWinRate" class="badge-success">83.3%</strong></div>
+            </div>
+            <div class="panel-table-wrap">
+              <div id="reviewSnapshotsTable" class="review-table"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 自选股列表管理 -->
+        <section class="workspace-section" id="watchlist">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Watchlist</p>
+              <h2>我的自选股跟踪</h2>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <span>自选股清单</span>
+              <button type="button" id="refreshWatchlistBtn" class="ghost-button">刷新自选</button>
+            </div>
+            <div id="watchlistRows" class="compact-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
