@@ -1253,6 +1253,11 @@ const loadBacktestData = async (force = false) => {
     if (data.equity_curve) {
       renderEquityChart(data.equity_curve);
     }
+
+    // 3. Highlight corresponding cell in sensitivity heatmap if rendered
+    if (currentSensitivityData) {
+      renderSensitivityHeatmap(currentSensitivityData, activeSensitivityMetric);
+    }
   } catch (err) {
     console.error("Backtest load error:", err);
   } finally {
@@ -1264,7 +1269,179 @@ const loadBacktestData = async (force = false) => {
 };
 
 /* ==========================================================================
-   11. Initialization & Event Binding
+   11. Parameter Sensitivity Heatmap & Optimal Frontier
+   ========================================================================== */
+let currentSensitivityData = null;
+let activeSensitivityMetric = "alpha";
+
+const renderSensitivityHeatmap = (data, metric = "alpha") => {
+  const container = $("sensitivityHeatmap");
+  if (!container || !data || !data.matrix) return;
+
+  const frequencies = data.frequencies || [5, 10, 15, 20];
+  const atrMultipliers = [...(data.atr_multipliers || [2.0, 2.5, 3.0])].reverse(); // [3.0, 2.5, 2.0]
+  const matrix = data.matrix;
+
+  const curFreq = Number($("btFreq")?.value || 5);
+  const curAtr = Number($("btAtr")?.value || 3.0);
+
+  const freqLabels = {
+    5: "5日 (周轮动)",
+    10: "10日 (双周)",
+    15: "15日 (三周)",
+    20: "20日 (月度)",
+  };
+
+  // Build matrix lookup by (atr_mult, freq)
+  const cellMap = {};
+  let bestAlphaVal = -9999;
+  let bestAlphaKey = "";
+
+  matrix.forEach(row => {
+    row.forEach(cell => {
+      const key = `${Number(cell.atr_mult).toFixed(1)}_${cell.freq}`;
+      cellMap[key] = cell;
+      if (cell.alpha_pct > bestAlphaVal) {
+        bestAlphaVal = cell.alpha_pct;
+        bestAlphaKey = key;
+      }
+    });
+  });
+
+  let html = `<table class="sensitivity-grid-table">
+    <thead>
+      <tr>
+        <th class="row-header">ATR 止损 \\ 调仓</th>
+        ${frequencies.map(f => `<th>${freqLabels[f] || f + "日"}</th>`).join("")}
+      </tr>
+    </thead>
+    <tbody>
+  `;
+
+  atrMultipliers.forEach(mult => {
+    html += `<tr>
+      <th class="row-header">${mult.toFixed(1)}x ATR</th>
+    `;
+
+    frequencies.forEach(freq => {
+      const key = `${mult.toFixed(1)}_${freq}`;
+      const cell = cellMap[key];
+      if (!cell) {
+        html += `<td>-</td>`;
+        return;
+      }
+
+      const isSelected = (freq === curFreq && Math.abs(mult - curAtr) < 0.05);
+      const isBestAlpha = (key === bestAlphaKey);
+
+      let mainValStr = "";
+      let subValStr = "";
+      let heatClass = "cell-heat-mild";
+
+      if (metric === "alpha") {
+        mainValStr = formatPct(cell.alpha_pct);
+        subValStr = `Sharpe ${formatNumber(cell.sharpe_ratio, 2)}`;
+        if (cell.alpha_pct > 1.0) heatClass = "cell-heat-top";
+        else if (cell.alpha_pct >= 0) heatClass = "cell-heat-pos";
+        else if (cell.alpha_pct >= -15) heatClass = "cell-heat-mild";
+        else if (cell.alpha_pct >= -35) heatClass = "cell-heat-neg";
+        else heatClass = "cell-heat-deep-neg";
+      } else if (metric === "sharpe") {
+        mainValStr = formatNumber(cell.sharpe_ratio, 2);
+        subValStr = `Alpha ${formatPct(cell.alpha_pct)}`;
+        if (cell.sharpe_ratio >= 0.6) heatClass = "cell-heat-top";
+        else if (cell.sharpe_ratio >= 0.3) heatClass = "cell-heat-pos";
+        else if (cell.sharpe_ratio >= 0) heatClass = "cell-heat-mild";
+        else if (cell.sharpe_ratio >= -0.4) heatClass = "cell-heat-neg";
+        else heatClass = "cell-heat-deep-neg";
+      } else if (metric === "strat_return") {
+        mainValStr = formatPct(cell.strat_return_pct);
+        subValStr = `SPY ${formatPct(cell.spy_return_pct)}`;
+        if (cell.strat_return_pct >= 28.0) heatClass = "cell-heat-top";
+        else if (cell.strat_return_pct >= 10.0) heatClass = "cell-heat-pos";
+        else if (cell.strat_return_pct >= 0) heatClass = "cell-heat-mild";
+        else heatClass = "cell-heat-neg";
+      } else if (metric === "max_dd") {
+        mainValStr = formatPct(cell.max_drawdown_pct);
+        subValStr = `胜率 ${cell.win_rate_pct}%`;
+        if (cell.max_drawdown_pct >= -18.0) heatClass = "cell-heat-top";
+        else if (cell.max_drawdown_pct >= -22.0) heatClass = "cell-heat-pos";
+        else if (cell.max_drawdown_pct >= -26.0) heatClass = "cell-heat-mild";
+        else heatClass = "cell-heat-neg";
+      } else if (metric === "win_rate") {
+        mainValStr = `${cell.win_rate_pct}%`;
+        subValStr = `共 ${cell.total_trades} 笔`;
+        if (cell.win_rate_pct >= 45.0) heatClass = "cell-heat-top";
+        else if (cell.win_rate_pct >= 40.0) heatClass = "cell-heat-pos";
+        else if (cell.win_rate_pct >= 35.0) heatClass = "cell-heat-mild";
+        else heatClass = "cell-heat-neg";
+      }
+
+      html += `
+        <td class="heatmap-cell ${heatClass} ${isSelected ? 'active-selection' : ''}" data-freq="${freq}" data-atr="${mult.toFixed(1)}">
+          ${isBestAlpha ? '<span class="crown-badge" title="超额收益最高前沿">👑</span>' : ''}
+          <span class="main-val">${mainValStr}</span>
+          <span class="sub-val">${subValStr}</span>
+        </td>
+      `;
+    });
+
+    html += `</tr>`;
+  });
+
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+
+  // Add click listeners to each cell
+  container.querySelectorAll(".heatmap-cell").forEach(cellEl => {
+    cellEl.addEventListener("click", () => {
+      const f = cellEl.dataset.freq;
+      const a = cellEl.dataset.atr;
+      if (f && a) {
+        if ($("btFreq")) $("btFreq").value = f;
+        if ($("btAtr")) $("btAtr").value = a;
+        loadBacktestData(false);
+        renderSensitivityHeatmap(currentSensitivityData, activeSensitivityMetric);
+        $("equityChartContainer")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  });
+};
+
+const loadSensitivityData = async (force = false) => {
+  const range = $("btRange")?.value || "2y";
+  const topN = $("btTopN")?.value || "2";
+
+  try {
+    const url = `/api/backtest/sensitivity?range=${encodeURIComponent(range)}&top_n=${encodeURIComponent(topN)}&force=${force ? "1" : "0"}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok) return;
+
+    currentSensitivityData = data;
+    renderSensitivityHeatmap(data, activeSensitivityMetric);
+
+    // Update optimal frontier cards
+    const opt = data.optimal_frontier || {};
+    if (opt.best_alpha) {
+      setText("frontAlphaCombo", `${opt.best_alpha.freq}日轮动 · ${opt.best_alpha.atr_mult}x ATR`);
+      setText("frontAlphaVal", `Alpha ${formatPct(opt.best_alpha.alpha_pct)} (策略 ${formatPct(opt.best_alpha.strat_return_pct)})`);
+    }
+    if (opt.best_sharpe) {
+      setText("frontSharpeCombo", `${opt.best_sharpe.freq}日轮动 · ${opt.best_sharpe.atr_mult}x ATR`);
+      setText("frontSharpeVal", `Sharpe ${formatNumber(opt.best_sharpe.sharpe_ratio, 2)} (胜率 ${opt.best_sharpe.win_rate_pct}%)`);
+    }
+    if (opt.min_drawdown) {
+      setText("frontMddCombo", `${opt.min_drawdown.freq}日轮动 · ${opt.min_drawdown.atr_mult}x ATR`);
+      setText("frontMddVal", `Max DD ${formatPct(opt.min_drawdown.max_drawdown_pct)} (防御标杆)`);
+    }
+  } catch (err) {
+    console.error("Sensitivity load error:", err);
+  }
+};
+
+/* ==========================================================================
+   12. Initialization & Event Binding
    ========================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   // Clock ticker
@@ -1306,11 +1483,38 @@ document.addEventListener("DOMContentLoaded", () => {
   $("refreshReviewBtn")?.addEventListener("click", loadReviewSnapshots);
   $("refreshWatchlistBtn")?.addEventListener("click", loadWatchlist);
   $("btnRecalculatePortfolio")?.addEventListener("click", recalculatePortfolio);
-  $("btnRunBacktest")?.addEventListener("click", () => loadBacktestData(false));
+  $("btnRunBacktest")?.addEventListener("click", () => {
+    loadBacktestData(false);
+    loadSensitivityData(false);
+  });
 
   // Auto trigger on parameter changes
-  ["btRange", "btFreq", "btTopN", "btAtr"].forEach(id => {
-    $(id)?.addEventListener("change", () => loadBacktestData(false));
+  ["btFreq", "btAtr"].forEach(id => {
+    $(id)?.addEventListener("change", () => {
+      loadBacktestData(false);
+      if (currentSensitivityData) {
+        renderSensitivityHeatmap(currentSensitivityData, activeSensitivityMetric);
+      }
+    });
+  });
+
+  ["btRange", "btTopN"].forEach(id => {
+    $(id)?.addEventListener("change", () => {
+      loadBacktestData(false);
+      loadSensitivityData(false);
+    });
+  });
+
+  // Metric tab switches for sensitivity heatmap
+  document.querySelectorAll("#sensitivityTabs .tab-btn").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll("#sensitivityTabs .tab-btn").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      activeSensitivityMetric = tab.dataset.metric || "alpha";
+      if (currentSensitivityData) {
+        renderSensitivityHeatmap(currentSensitivityData, activeSensitivityMetric);
+      }
+    });
   });
 
   // Hydrate All Data Parallelly on Startup
@@ -1321,6 +1525,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadReviewSnapshots();
   loadWatchlist();
   loadBacktestData(false);
+  loadSensitivityData(false);
 
   // Instantly Analyze NVDA.US so the screen opens with rich, living data!
   runDeepAnalyze("NVDA.US");

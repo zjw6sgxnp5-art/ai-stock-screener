@@ -452,6 +452,47 @@
                 <p>严禁左侧接飞刀，收盘价位于 60 日均线下方 5% 以上一票否决剔除，彻底隔绝空头破位股对净值的拖累。</p>
               </div>
             </div>
+
+            <!-- 模块：参数敏感度热力图阵列与最优前沿 (Parameter Sensitivity Heatmap & Optimal Frontier) -->
+            <div class="panel sensitivity-panel" style="margin-top: 16px;">
+              <div class="panel-head">
+                <div class="chart-header-left">
+                  <span>多因子超参数敏感度热力图 (Parameter Sensitivity Matrix &amp; Optimal Frontier)</span>
+                  <span class="sub-muted">横轴：调仓轮动频率 · 纵轴：动态 ATR 止损倍数 (点击任意单元格快速套用并演练)</span>
+                </div>
+                <div class="sensitivity-metric-tabs" id="sensitivityTabs">
+                  <button type="button" class="tab-btn active" data-metric="alpha">超额 Alpha</button>
+                  <button type="button" class="tab-btn" data-metric="sharpe">夏普比率</button>
+                  <button type="button" class="tab-btn" data-metric="strat_return">策略收益率</button>
+                  <button type="button" class="tab-btn" data-metric="max_dd">最大回撤</button>
+                  <button type="button" class="tab-btn" data-metric="win_rate">胜率</button>
+                </div>
+              </div>
+
+              <!-- 热力图表格容器 -->
+              <div class="heatmap-table-wrap">
+                <div id="sensitivityHeatmap" class="sensitivity-heatmap"></div>
+              </div>
+
+              <!-- 最优前沿参数推荐提示栏 -->
+              <div class="optimal-frontier-summary" id="optimalFrontierSummary">
+                <div class="frontier-card frontier-alpha">
+                  <span class="frontier-badge">👑 最优 Alpha 组合</span>
+                  <strong id="frontAlphaCombo">5日轮动 · 3.0x ATR</strong>
+                  <span id="frontAlphaVal" class="badge-success">Alpha +2.01% (收益 +30.29%)</span>
+                </div>
+                <div class="frontier-card frontier-sharpe">
+                  <span class="frontier-badge">🎯 最高夏普组合</span>
+                  <strong id="frontSharpeCombo">5日轮动 · 3.0x ATR</strong>
+                  <span id="frontSharpeVal" class="badge-info">Sharpe 0.61 (波动率 17.8%)</span>
+                </div>
+                <div class="frontier-card frontier-mdd">
+                  <span class="frontier-badge">🛡️ 最低回撤防守组合</span>
+                  <strong id="frontMddCombo">20日轮动 · 2.0x ATR</strong>
+                  <span id="frontMddVal" class="badge-warning">Max DD -17.10% (抗震防守)</span>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

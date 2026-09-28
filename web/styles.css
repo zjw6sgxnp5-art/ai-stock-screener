@@ -1700,3 +1700,190 @@ h1, h2, h3, h4, p {
   margin-bottom: 0;
 }
 
+/* ==========================================================================
+   Step 7: Parameter Sensitivity Heatmap & Optimal Frontier
+   ========================================================================== */
+.sensitivity-panel {
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.sensitivity-metric-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sensitivity-metric-tabs .tab-btn {
+  padding: 5px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sensitivity-metric-tabs .tab-btn:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.sensitivity-metric-tabs .tab-btn.active {
+  background: var(--cyan-soft);
+  border-color: var(--cyan);
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.heatmap-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.sensitivity-grid-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 8px;
+  min-width: 600px;
+}
+
+.sensitivity-grid-table th {
+  padding: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+.sensitivity-grid-table th.row-header {
+  text-align: right;
+  width: 110px;
+  font-family: var(--mono);
+}
+
+.heatmap-cell {
+  position: relative;
+  padding: 12px 10px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.heatmap-cell:hover {
+  transform: translateY(-2px);
+  border-color: var(--cyan) !important;
+  box-shadow: 0 6px 16px rgba(56, 189, 248, 0.25);
+  z-index: 2;
+}
+
+.heatmap-cell.active-selection {
+  border-color: var(--cyan) !important;
+  box-shadow: 0 0 0 2px var(--cyan), 0 4px 12px rgba(56, 189, 248, 0.4) !important;
+}
+
+.heatmap-cell .main-val {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--mono);
+  display: block;
+}
+
+.heatmap-cell .sub-val {
+  font-size: 10px;
+  opacity: 0.85;
+  font-family: var(--mono);
+  margin-top: 2px;
+  display: block;
+}
+
+.heatmap-cell .crown-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 11px;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+}
+
+/* Heatmap Color Gradients */
+.cell-heat-top {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #34d399;
+}
+
+.cell-heat-pos {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+
+.cell-heat-mild {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: #fbbf24;
+}
+
+.cell-heat-neg {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.28);
+  color: #fda4af;
+}
+
+.cell-heat-deep-neg {
+  background: rgba(136, 19, 55, 0.2);
+  border-color: rgba(244, 63, 94, 0.2);
+  color: #f43f5e;
+}
+
+/* Optimal Frontier Cards */
+.optimal-frontier-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+@media (max-width: 900px) {
+  .optimal-frontier-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+.frontier-card {
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.frontier-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+}
+
+.frontier-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.frontier-card strong {
+  font-size: 13px;
+  color: var(--ink-strong);
+  font-family: var(--mono);
+}
+
+

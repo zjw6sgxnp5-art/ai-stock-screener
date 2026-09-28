@@ -20,7 +20,7 @@ from backend.db import (
     remove_watchlist_symbol,
 )
 from backend.services.ai_engine import check_ai_models_status, run_cli_analysis_for_symbol
-from backend.services.backtester import run_quantitative_backtest
+from backend.services.backtester import run_quantitative_backtest, run_sensitivity_analysis
 from backend.services.macro_service import get_macro_climate
 from backend.services.market_data import (
     export_markdown_report,
@@ -162,6 +162,17 @@ class RequestHandler(BaseHTTPRequestHandler):
                     rebalance_freq=rebal_freq,
                     top_n=top_n,
                     atr_mult=atr_mult,
+                    force_refresh=force
+                ))
+                return
+            if parsed.path == "/api/backtest/sensitivity":
+                params = parse_qs(parsed.query)
+                range_str = params.get("range", ["2y"])[0]
+                top_n = int(params.get("top_n", ["2"])[0] or 2)
+                force = params.get("force", ["0"])[0] in ("1", "true", "yes")
+                json_response(self, run_sensitivity_analysis(
+                    range_str=range_str,
+                    top_n=top_n,
                     force_refresh=force
                 ))
                 return

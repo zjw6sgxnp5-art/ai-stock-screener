@@ -318,6 +318,92 @@ def run_quantitative_backtest(
     return result
 
 
+def run_sensitivity_analysis(
+    range_str: str = "2y",
+    top_n: int = 2,
+    frequencies: Optional[List[int]] = None,
+    atr_multipliers: Optional[List[float]] = None,
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    """
+    Run hyperparameter sensitivity matrix across rebalance frequencies and ATR stop multipliers.
+    Identifies optimal frontier parameter sets for maximum Alpha, Sharpe, and risk control.
+    """
+    if frequencies is None:
+        frequencies = [5, 10, 15, 20]
+    if atr_multipliers is None:
+        atr_multipliers = [2.0, 2.5, 3.0]
+
+    cache_key = f"sensitivity:{range_str}:{top_n}:{','.join(map(str, frequencies))}:{','.join(map(str, atr_multipliers))}"
+    if not force_refresh:
+        cached = get_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    matrix = []
+    best_alpha = {"alpha": -9999.0, "combo": None}
+    best_sharpe = {"sharpe": -9999.0, "combo": None}
+    min_drawdown = {"max_dd": -9999.0, "combo": None}
+
+    for mult in atr_multipliers:
+        row = []
+        for freq in frequencies:
+            bt = run_quantitative_backtest(
+                range_str=range_str,
+                rebalance_freq=freq,
+                top_n=top_n,
+                atr_mult=mult,
+                force_refresh=False,
+            )
+            perf = bt.get("performance", {})
+            strat_ret = perf.get("strategy_total_return_pct", 0.0)
+            spy_ret = perf.get("benchmark_total_return_pct", 0.0)
+            alpha = perf.get("alpha_pct", round(strat_ret - spy_ret, 2))
+            sharpe = perf.get("sharpe_ratio", 0.0)
+            max_dd = perf.get("strategy_max_drawdown_pct", 0.0)
+            win_rate = perf.get("win_rate_pct", 0.0)
+            trades = perf.get("total_trades", 0)
+
+            cell = {
+                "freq": freq,
+                "atr_mult": mult,
+                "strat_return_pct": strat_ret,
+                "spy_return_pct": spy_ret,
+                "alpha_pct": alpha,
+                "sharpe_ratio": sharpe,
+                "max_drawdown_pct": max_dd,
+                "win_rate_pct": win_rate,
+                "total_trades": trades,
+            }
+            row.append(cell)
+
+            if alpha > best_alpha["alpha"]:
+                best_alpha = {"alpha": alpha, "combo": cell}
+            if sharpe > best_sharpe["sharpe"]:
+                best_sharpe = {"sharpe": sharpe, "combo": cell}
+            if min_drawdown["combo"] is None or max_dd > min_drawdown["max_dd"]:
+                min_drawdown = {"max_dd": max_dd, "combo": cell}
+
+        matrix.append(row)
+
+    result = {
+        "ok": True,
+        "generated_at": utc_now_iso(),
+        "range": range_str,
+        "top_n": top_n,
+        "frequencies": frequencies,
+        "atr_multipliers": atr_multipliers,
+        "matrix": matrix,
+        "optimal_frontier": {
+            "best_alpha": best_alpha["combo"],
+            "best_sharpe": best_sharpe["combo"],
+            "min_drawdown": min_drawdown["combo"],
+        },
+    }
+    set_cache(cache_key, result, 7200)
+    return result
+
+
 if __name__ == "__main__":
     res = run_quantitative_backtest()
     perf = res.get("performance", {})
