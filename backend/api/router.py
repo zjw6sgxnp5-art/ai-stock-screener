@@ -20,6 +20,7 @@ from backend.db import (
     remove_watchlist_symbol,
 )
 from backend.services.ai_engine import check_ai_models_status, run_cli_analysis_for_symbol
+from backend.services.backtester import run_quantitative_backtest
 from backend.services.macro_service import get_macro_climate
 from backend.services.market_data import (
     export_markdown_report,
@@ -148,6 +149,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 symbol = params.get("symbol", [""])[0]
                 json_response(self, export_markdown_report(symbol))
+                return
+            if parsed.path == "/api/backtest/run":
+                params = parse_qs(parsed.query)
+                range_str = params.get("range", ["2y"])[0]
+                json_response(self, run_quantitative_backtest(range_str=range_str))
                 return
 
             self.serve_static(parsed.path)
