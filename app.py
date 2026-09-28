@@ -10,11 +10,15 @@ from backend.api.router import RequestHandler
 from backend.config import APP_HOST, APP_PORT, GEMINI_BIN, GROK_BIN, LONG_BRIDGE_BIN
 from backend.db import ensure_db
 from backend.services.ai_engine import check_ai_models_status
+from backend.services.auto_evolution import start_autonomous_daemon
 
 
 def main() -> None:
     """Initialize SQLite database and launch institutional HTTP service."""
     ensure_db()
+    
+    # Launch autonomous self-evolving engine in background
+    start_autonomous_daemon()
     
     # Check AI models & Longbridge status on startup
     status = check_ai_models_status()

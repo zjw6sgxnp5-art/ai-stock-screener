@@ -96,6 +96,32 @@ def ensure_db() -> None:
                     except Exception:
                         pass
 
+            conn.execute(
+                """
+                create table if not exists model_evolution_log (
+                    id integer primary key autoincrement,
+                    created_at text not null,
+                    generation integer not null,
+                    macro_regime text not null,
+                    previous_weights text not null,
+                    new_weights text not null,
+                    evaluated_picks_count integer not null,
+                    avg_alpha real,
+                    hit_rate real,
+                    tuning_rationale text not null
+                )
+                """
+            )
+            conn.execute(
+                """
+                create table if not exists active_model_state (
+                    key text primary key,
+                    value text not null,
+                    updated_at text not null
+                )
+                """
+            )
+
 
 def get_cache(cache_key: str) -> Optional[Any]:
     """Retrieve unexpired payload from cache."""
@@ -262,11 +288,12 @@ def archive_recommendation_snapshot(
     target_price: Optional[float] = None,
     ai_model: str = "CLI",
     evidence_json: str = "{}",
-    review_note: str = ""
+    review_note: str = "",
+    created_at: Optional[str] = None
 ) -> Dict[str, Any]:
     """Archive a daily pick or manual AI decision snapshot into the review table."""
     ensure_db()
-    now = utc_now_iso()
+    now = created_at or utc_now_iso()
     tags_str = ",".join(tags or [])
     with DB_LOCK:
         with sqlite3.connect(DB_PATH) as conn:
@@ -337,3 +364,149 @@ def get_review_snapshots(limit: int = 50) -> List[Dict[str, Any]]:
                     "review_note": row["review_note"]
                 })
             return results
+
+
+def get_active_model_state() -> Dict[str, Any]:
+    """Retrieve current dynamic model generation and factor weights."""
+    ensure_db()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            rows = cursor.execute("select key, value from active_model_state").fetchall()
+            state = {r[0]: r[1] for r in rows}
+            
+            gen = int(state.get("generation", 1))
+            weights_raw = state.get("weights")
+            if weights_raw:
+                try:
+                    weights = json.loads(weights_raw)
+                except Exception:
+                    weights = {"momentum": 35, "catalyst": 25, "quality": 20, "valuation": 10, "liquidity": 10}
+            else:
+                weights = {"momentum": 35, "catalyst": 25, "quality": 20, "valuation": 10, "liquidity": 10}
+                
+            return {
+                "generation": gen,
+                "weights": weights,
+                "updated_at": state.get("updated_at", utc_now_iso()),
+                "total_cycles": int(state.get("total_cycles", 0)),
+            }
+
+
+def update_active_model_state(generation: int, weights: Dict[str, int], total_cycles: int = 1) -> None:
+    """Save updated evolved model generation and weights."""
+    ensure_db()
+    now = utc_now_iso()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "insert or replace into active_model_state (key, value, updated_at) values (?, ?, ?)",
+                ("generation", str(generation), now)
+            )
+            cursor.execute(
+                "insert or replace into active_model_state (key, value, updated_at) values (?, ?, ?)",
+                ("weights", json.dumps(weights), now)
+            )
+            cursor.execute(
+                "insert or replace into active_model_state (key, value, updated_at) values (?, ?, ?)",
+                ("total_cycles", str(total_cycles), now)
+            )
+
+
+def record_model_evolution(
+    generation: int,
+    macro_regime: str,
+    previous_weights: Dict[str, int],
+    new_weights: Dict[str, int],
+    evaluated_picks_count: int,
+    avg_alpha: float,
+    hit_rate: float,
+    tuning_rationale: str,
+) -> int:
+    """Record an audit entry into the model evolution history log."""
+    ensure_db()
+    now = utc_now_iso()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                insert into model_evolution_log (
+                    created_at, generation, macro_regime, previous_weights, new_weights,
+                    evaluated_picks_count, avg_alpha, hit_rate, tuning_rationale
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now, generation, macro_regime, json.dumps(previous_weights), json.dumps(new_weights),
+                    evaluated_picks_count, avg_alpha, hit_rate, tuning_rationale
+                )
+            )
+            return cursor.lastrowid or 0
+
+
+def get_model_evolution_logs(limit: int = 15) -> List[Dict[str, Any]]:
+    """Retrieve historical model self-evolution logs."""
+    ensure_db()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            rows = cursor.execute(
+                """
+                select id, created_at, generation, macro_regime, previous_weights, new_weights,
+                       evaluated_picks_count, avg_alpha, hit_rate, tuning_rationale
+                from model_evolution_log
+                order by id desc limit ?
+                """,
+                (limit,)
+            ).fetchall()
+            logs = []
+            for r in rows:
+                try:
+                    prev_w = json.loads(r["previous_weights"])
+                except Exception:
+                    prev_w = {}
+                try:
+                    new_w = json.loads(r["new_weights"])
+                except Exception:
+                    new_w = {}
+                logs.append({
+                    "id": r["id"],
+                    "created_at": r["created_at"],
+                    "generation": r["generation"],
+                    "macro_regime": r["macro_regime"],
+                    "previous_weights": prev_w,
+                    "new_weights": new_w,
+                    "evaluated_picks_count": r["evaluated_picks_count"],
+                    "avg_alpha": r["avg_alpha"],
+                    "hit_rate": r["hit_rate"],
+                    "tuning_rationale": r["tuning_rationale"],
+                })
+            return logs
+
+
+def update_snapshot_evaluation(
+    snapshot_id: int,
+    t5_price: Optional[float] = None,
+    t20_price: Optional[float] = None,
+    alpha: Optional[float] = None,
+    status: str = "ACTIVE",
+    review_note: str = "",
+) -> None:
+    """Update evaluation metrics for a historical recommendation snapshot."""
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                update recommendation_snapshots
+                set t5_price = coalesce(?, t5_price),
+                    t20_price = coalesce(?, t20_price),
+                    alpha = coalesce(?, alpha),
+                    status = ?,
+                    review_note = ?
+                where id = ?
+                """,
+                (t5_price, t20_price, alpha, status, review_note, snapshot_id)
+            )

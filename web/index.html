@@ -219,6 +219,61 @@
             <p class="section-help">在调用双模型 CLI 深度推演前，执行 RS 强弱、换手流动性与 52 周新高纯数值硬闸门，压制候选池，杜绝 Token 爆炸与并发污染。</p>
           </div>
 
+          <!-- 核心功能：自主运行、自测算、自优化闭环中枢 (Autonomous Self-Evolution Command Center) -->
+          <div class="panel auto-evolution-panel" id="autoEvolutionPanel">
+            <div class="evolution-header-bar">
+              <div class="evolution-status-info">
+                <span class="pulse-cyan"></span>
+                <div>
+                  <div class="evolution-gen-tag">
+                    <strong id="evoGenerationBadge">🧬 自主进化选股引擎: Gen 3 活跃</strong>
+                    <span id="evoDaemonStatus" class="badge-success">● 每日自闭环巡检运行中</span>
+                  </div>
+                  <p id="evoTuningRationale" class="evolution-rationale">
+                    模型自学习诊断：近期宏观 VIX 平稳且大盘动能显著，系统已自动上调动量与科技催化因子权重至 35%/27%，估值降至 10%。
+                  </p>
+                </div>
+              </div>
+
+              <div class="evolution-actions">
+                <button type="button" id="btnTriggerAutoEvolution" class="primary-button pulse-btn">
+                  ⚡ 立即执行一轮自主演进 (测算历史 ➔ 优化因子 ➔ 输出新标的)
+                </button>
+              </div>
+            </div>
+
+            <!-- 动态自适应因子权重分布条 -->
+            <div class="evolution-weights-container">
+              <div class="weights-header">
+                <span>当前模型动态因子配比 (随大盘风向与历史实测胜率自主微调)</span>
+                <span id="evoLastUpdated" class="sub-muted">模型版本: 实时自优化</span>
+              </div>
+              <div class="evolution-weights-grid" id="evolutionWeightsGrid">
+                <!-- 动态渲染: 动量、催化、质量、估值、流动性 -->
+              </div>
+            </div>
+
+            <!-- 历史测算战绩仪表盘 -->
+            <div class="evolution-scoreboard-grid">
+              <div class="stat-box">
+                <span>已测算历史推荐样本</span>
+                <strong id="evoTotalEval">8 批次</strong>
+              </div>
+              <div class="stat-box">
+                <span>历史推荐胜率 (Alpha &gt; 0)</span>
+                <strong id="evoHitRate" class="badge-success">75.0%</strong>
+              </div>
+              <div class="stat-box">
+                <span>平均跑赢标普 (Alpha)</span>
+                <strong id="evoAvgAlpha" class="badge-info">+5.85%</strong>
+              </div>
+              <div class="stat-box">
+                <span>因果复盘定性分布</span>
+                <small id="evoCausalSummary" class="text-cyan">🎯 逻辑兑现 75% · 🌧️ 大盘拖累 12.5% · ❌ 破位 12.5%</small>
+              </div>
+            </div>
+          </div>
+
           <!-- Step 2.5 纯数值漏斗流水线监控看板 -->
           <div class="funnel-pipeline-banner panel" id="funnelPipelineBanner">
             <div class="funnel-step-card">

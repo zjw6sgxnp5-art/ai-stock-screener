@@ -20,6 +20,7 @@ from backend.db import (
     remove_watchlist_symbol,
 )
 from backend.services.ai_engine import check_ai_models_status, run_cli_analysis_for_symbol
+from backend.services.auto_evolution import get_autonomous_status, run_full_autonomous_cycle
 from backend.services.backtester import run_quantitative_backtest, run_sensitivity_analysis
 from backend.services.macro_service import get_macro_climate
 from backend.services.market_data import (
@@ -176,6 +177,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     force_refresh=force
                 ))
                 return
+            if parsed.path == "/api/evolution/status":
+                json_response(self, get_autonomous_status())
+                return
 
             self.serve_static(parsed.path)
         except AppError as exc:
@@ -198,6 +202,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 symbol = body.get("symbol", "NVDA.US")
                 model = body.get("model", "gemini")
                 json_response(self, run_cli_analysis_for_symbol(symbol, model_name=model))
+                return
+            if parsed.path == "/api/evolution/run_cycle":
+                json_response(self, run_full_autonomous_cycle())
                 return
             if parsed.path == "/api/portfolio/calculate":
                 candidates = body.get("candidates")
