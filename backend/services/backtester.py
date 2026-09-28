@@ -117,9 +117,17 @@ def run_quantitative_backtest(
                 bar = stock_data[sym][dt]
                 if bar["high"] > pos["highest_price"]:
                     pos["highest_price"] = bar["high"]
-                    trail_stop = pos["highest_price"] - (pos["entry_price"] - pos["initial_stop"])
-                    if trail_stop > pos["stop_loss"]:
-                        pos["stop_loss"] = trail_stop
+                    gain = (pos["highest_price"] - pos["entry_price"]) / pos["entry_price"]
+                    # 1. Breakeven profit lock (Gain >= 10% -> stop to cost + 1% fee cushion)
+                    if gain >= 0.10:
+                        be_stop = pos["entry_price"] * 1.01
+                        if be_stop > pos["stop_loss"]:
+                            pos["stop_loss"] = be_stop
+                    # 2. Dynamic trailing profit lock (Gain >= 20% -> trail by 2.5x ATR)
+                    if gain >= 0.20:
+                        trail_stop = pos["highest_price"] - (2.5 * pos["atr"])
+                        if trail_stop > pos["stop_loss"]:
+                            pos["stop_loss"] = trail_stop
 
                 # Trigger Stop Loss
                 if bar["low"] <= pos["stop_loss"]:
@@ -140,15 +148,15 @@ def run_quantitative_backtest(
 
             # 1. Macro Regime via VIX
             vix_val = vix_data[dt]["close"]
-            if vix_val < 17.5:
+            if vix_val < 18.0:
                 regime = "RISK_ON"
-                target_exposure = 0.90
-            elif vix_val <= 22.0:
+                target_exposure = 0.95
+            elif vix_val <= 23.0:
                 regime = "NEUTRAL"
-                target_exposure = 0.70
+                target_exposure = 0.75
             elif vix_val <= 28.0:
                 regime = "CAUTION"
-                target_exposure = 0.40
+                target_exposure = 0.45
             else:
                 regime = "PANIC"
                 target_exposure = 0.15
@@ -170,6 +178,13 @@ def run_quantitative_backtest(
                 spy_ret20 = (spy_closes[-1] / spy_closes[0] - 1.0) * 100.0 if len(spy_closes) >= 20 else 0.0
                 rs = ret20 - spy_ret20
 
+                ma20 = sum(closes[-20:]) / 20.0
+                ma60 = sum(closes[-60:]) / len(closes[-60:])
+                
+                # Trend Filter: Reject structural downtrends
+                if closes[-1] < ma60 * 0.95:
+                    continue
+
                 # ATR(14) calculation
                 trs = []
                 for k in range(1, min(15, len(past_bars))):
@@ -177,23 +192,18 @@ def run_quantitative_backtest(
                     trs.append(max(h - l, abs(h - pc), abs(l - pc)))
                 atr = sum(trs) / len(trs) if trs else closes[-1] * 0.03
 
-                # Multi-factor formula based on regime
-                if regime == "RISK_ON":
-                    score = rs * 1.5 + ret60 * 0.5 + (12.0 if closes[-1] > max(closes[-20:]) else 0.0)
-                elif regime == "NEUTRAL":
-                    score = rs * 1.0 + (10.0 if closes[-1] > (sum(closes[-20:]) / 20.0) else -10.0)
-                else:
-                    score = -atr / closes[-1] * 100.0 + (10.0 if rs > 0 else -10.0)
-
+                # Multi-factor score with trend and relative strength
+                score = rs * 1.5 + ret60 * 0.8 + (15.0 if closes[-1] > ma20 else -10.0)
                 scores.append({"sym": sym, "score": score, "price": closes[-1], "atr": atr})
 
             scores.sort(key=lambda x: x["score"], reverse=True)
-            top_picks = scores[:top_n]
-            top_syms = set(x["sym"] for x in top_picks)
+            ranks = {item["sym"]: r for r, item in enumerate(scores, 1)}
 
-            # 3. Buffer Zone: Sell positions falling out of Top N
+            # 3. Hysteresis Buffer: Only eject held positions if rank > 5 (let winners run)
+            buffer_sell_rank = max(top_n + 2, 5)
             for sym in list(positions.keys()):
-                if sym not in top_syms and dt in stock_data[sym]:
+                rank = ranks.get(sym, 999)
+                if rank > buffer_sell_rank and dt in stock_data[sym]:
                     cp = stock_data[sym][dt]["close"]
                     cash += positions[sym]["shares"] * cp * (1.0 - friction_pct)
                     pnl = (cp - positions[sym]["entry_price"]) / positions[sym]["entry_price"]
@@ -202,14 +212,16 @@ def run_quantitative_backtest(
                         winning_trades += 1
                     del positions[sym]
 
-            # 4. Allocate capital to new Top N picks
+            # 4. Allocate capital to Top N picks (with Top 1 momentum boost)
             total_equity = cash + sum(pos["shares"] * stock_data[s][dt]["close"] for s, pos in positions.items() if dt in stock_data[s])
-            target_alloc_per_stock = min((total_equity * target_exposure) / top_n, total_equity * max_sector_cap)
+            base_alloc = (total_equity * target_exposure) / top_n
 
-            for pick in top_picks:
+            for r, pick in enumerate(scores[:top_n], 1):
                 sym = pick["sym"]
                 if sym not in positions:
-                    alloc = min(target_alloc_per_stock, cash)
+                    weight_mult = 1.25 if r == 1 else 1.0
+                    target_alloc = min(base_alloc * weight_mult, total_equity * max_sector_cap)
+                    alloc = min(target_alloc, cash)
                     shares = math.floor(alloc / pick["price"])
                     if shares > 0:
                         cost = shares * pick["price"] * (1.0 + friction_pct)
@@ -220,6 +232,7 @@ def run_quantitative_backtest(
                             "highest_price": pick["price"],
                             "initial_stop": round(pick["price"] - 2.5 * pick["atr"], 2),
                             "stop_loss": round(pick["price"] - 2.5 * pick["atr"], 2),
+                            "atr": pick["atr"],
                         }
 
         # C. End-of-day equity logging
