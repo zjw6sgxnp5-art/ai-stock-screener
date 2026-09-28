@@ -981,7 +981,290 @@ const exportCurrentReport = async () => {
 };
 
 /* ==========================================================================
-   9. Initialization & Event Binding
+   10. Quantitative Backtest & Alpha Attribution
+   ========================================================================== */
+let currentBacktestData = null;
+
+const renderEquityChart = (equityCurve) => {
+  const svg = $("equityChartSvg");
+  const container = $("equityChartContainer");
+  const tooltip = $("chartTooltip");
+  if (!svg || !container || !equityCurve) return;
+
+  const dates = equityCurve.dates || [];
+  const strat = equityCurve.strategy || [];
+  const spy = equityCurve.benchmark || [];
+  const N = dates.length;
+  if (N < 2) {
+    svg.innerHTML = `<text x="450" y="160" fill="var(--muted)" font-size="14" text-anchor="middle">暂无足够回测净值曲线数据</text>`;
+    return;
+  }
+
+  const width = 900;
+  const height = 320;
+  const padLeft = 70;
+  const padRight = 45;
+  const padTop = 30;
+  const padBottom = 40;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const allVals = [...strat, ...spy, 100000];
+  let minV = Math.min(...allVals);
+  let maxV = Math.max(...allVals);
+  const vRange = maxV - minV || 1;
+  minV = Math.max(0, minV - vRange * 0.06);
+  maxV = maxV + vRange * 0.08;
+
+  const getX = (i) => padLeft + (i / (N - 1)) * plotW;
+  const getY = (val) => padTop + plotH - ((val - minV) / (maxV - minV)) * plotH;
+
+  // Build grid lines
+  const gridLinesCount = 5;
+  let gridHtml = "";
+  for (let g = 0; g <= gridLinesCount; g++) {
+    const frac = g / gridLinesCount;
+    const yVal = minV + frac * (maxV - minV);
+    const yPos = padTop + plotH - frac * plotH;
+    const retPct = ((yVal / 100000 - 1) * 100).toFixed(0);
+    const retStr = `${retPct >= 0 ? "+" : ""}${retPct}%`;
+    gridHtml += `
+      <line x1="${padLeft}" y1="${yPos.toFixed(1)}" x2="${(width - padRight).toFixed(1)}" y2="${yPos.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3"/>
+      <text x="${(padLeft - 10).toFixed(1)}" y="${(yPos + 4).toFixed(1)}" fill="#64748b" font-size="10" font-family="var(--mono)" text-anchor="end">$${(yVal / 1000).toFixed(0)}k (${retStr})</text>
+    `;
+  }
+
+  // Cost baseline ($100k)
+  const costY = getY(100000);
+  const costLineHtml = `
+    <line x1="${padLeft}" y1="${costY.toFixed(1)}" x2="${(width - padRight).toFixed(1)}" y2="${costY.toFixed(1)}" stroke="#64748b" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.6"/>
+    <text x="${(width - padRight + 6).toFixed(1)}" y="${(costY + 3).toFixed(1)}" fill="#64748b" font-size="9" font-family="var(--mono)">成本 $100k</text>
+  `;
+
+  // Path data strings
+  let stratPathD = "";
+  let stratAreaD = "";
+  let spyPathD = "";
+
+  strat.forEach((v, i) => {
+    const x = getX(i);
+    const y = getY(v);
+    if (i === 0) {
+      stratPathD += `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+      stratAreaD += `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+    } else {
+      stratPathD += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+      stratAreaD += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+  });
+
+  const baseBottomY = padTop + plotH;
+  stratAreaD += ` L ${getX(N - 1).toFixed(1)} ${baseBottomY} L ${getX(0).toFixed(1)} ${baseBottomY} Z`;
+
+  spy.forEach((v, i) => {
+    const x = getX(i);
+    const y = getY(v);
+    if (i === 0) {
+      spyPathD += `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+    } else {
+      spyPathD += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+  });
+
+  // Date labels along X axis
+  let dateLabelsHtml = "";
+  const dateStep = Math.max(1, Math.floor(N / 5));
+  for (let i = 0; i < N; i += dateStep) {
+    const x = getX(i);
+    dateLabelsHtml += `
+      <text x="${x.toFixed(1)}" y="${height - 12}" fill="#64748b" font-size="10" font-family="var(--mono)" text-anchor="middle">${dates[i]}</text>
+    `;
+  }
+  if ((N - 1) % dateStep !== 0) {
+    const lastX = getX(N - 1);
+    dateLabelsHtml += `
+      <text x="${lastX.toFixed(1)}" y="${height - 12}" fill="#64748b" font-size="10" font-family="var(--mono)" text-anchor="middle">${dates[N - 1]}</text>
+    `;
+  }
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="stratAreaGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.32"/>
+        <stop offset="65%" stop-color="#38bdf8" stop-opacity="0.06"/>
+        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0"/>
+      </linearGradient>
+      <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="2.5" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+      </filter>
+    </defs>
+    <!-- Background Grids & Labels -->
+    ${gridHtml}
+    ${costLineHtml}
+    ${dateLabelsHtml}
+
+    <!-- Strategy Area Fill -->
+    <path d="${stratAreaD}" fill="url(#stratAreaGrad)"/>
+
+    <!-- Benchmark SPY Line -->
+    <path d="${spyPathD}" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="4 3" opacity="0.85"/>
+
+    <!-- Strategy Cyan Line -->
+    <path d="${stratPathD}" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#cyanGlow)"/>
+
+    <!-- Dynamic Hover Group -->
+    <g id="svgHoverGroup" style="display:none;">
+      <line id="svgCrosshair" x1="0" y1="${padTop}" x2="0" y2="${baseBottomY}" stroke="rgba(255,255,255,0.25)" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <circle id="svgSpyDot" r="4.5" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5"/>
+      <circle id="svgStratDot" r="5" fill="#38bdf8" stroke="#ffffff" stroke-width="2"/>
+    </g>
+
+    <!-- Transparent Interactive Overlay -->
+    <rect id="svgOverlay" x="${padLeft}" y="${padTop}" width="${plotW}" height="${plotH}" fill="transparent" style="cursor:crosshair;"/>
+  `;
+
+  // Crosshair & Tooltip Interaction
+  const overlay = svg.querySelector("#svgOverlay");
+  const hoverGroup = svg.querySelector("#svgHoverGroup");
+  const crosshair = svg.querySelector("#svgCrosshair");
+  const stratDot = svg.querySelector("#svgStratDot");
+  const spyDot = svg.querySelector("#svgSpyDot");
+
+  if (overlay) {
+    const handleMove = (e) => {
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const svgX = (mouseX / rect.width) * width;
+      
+      let ratio = (svgX - padLeft) / plotW;
+      ratio = Math.max(0, Math.min(1, ratio));
+      const idx = Math.min(N - 1, Math.max(0, Math.round(ratio * (N - 1))));
+
+      const ptX = getX(idx);
+      const sVal = strat[idx];
+      const bVal = spy[idx];
+      const sY = getY(sVal);
+      const bY = getY(bVal);
+
+      if (hoverGroup && crosshair && stratDot && spyDot) {
+        hoverGroup.style.display = "block";
+        crosshair.setAttribute("x1", ptX.toFixed(1));
+        crosshair.setAttribute("x2", ptX.toFixed(1));
+        stratDot.setAttribute("cx", ptX.toFixed(1));
+        stratDot.setAttribute("cy", sY.toFixed(1));
+        spyDot.setAttribute("cx", ptX.toFixed(1));
+        spyDot.setAttribute("cy", bY.toFixed(1));
+      }
+
+      if (tooltip) {
+        const sRet = (sVal / 100000 - 1) * 100;
+        const bRet = (bVal / 100000 - 1) * 100;
+        const alpha = sRet - bRet;
+        tooltip.innerHTML = `
+          <strong>📅 ${dates[idx]}</strong>
+          <div>策略净值: <span style="color:#38bdf8;font-weight:600;">$${formatNumber(sVal, 0)}</span> (${formatPct(sRet)})</div>
+          <div>标普500: <span style="color:#f59e0b;font-weight:600;">$${formatNumber(bVal, 0)}</span> (${formatPct(bRet)})</div>
+          <div style="margin-top:2px;border-top:1px solid rgba(255,255,255,0.1);padding-top:2px;color:${alpha >= 0 ? '#38bdf8' : '#f43f5e'}">超额 Alpha: ${formatPct(alpha)}</div>
+        `;
+        tooltip.classList.remove("hidden");
+        
+        let ttLeft = mouseX + 16;
+        if (ttLeft + 190 > rect.width) {
+          ttLeft = mouseX - 195;
+        }
+        tooltip.style.left = `${Math.max(8, ttLeft)}px`;
+        tooltip.style.top = `${Math.max(10, Math.min(rect.height - 95, e.clientY - rect.top - 20))}px`;
+      }
+    };
+
+    const handleLeave = () => {
+      if (hoverGroup) hoverGroup.style.display = "none";
+      if (tooltip) tooltip.classList.add("hidden");
+    };
+
+    overlay.addEventListener("mousemove", handleMove);
+    overlay.addEventListener("mouseleave", handleLeave);
+    overlay.addEventListener("touchmove", (e) => {
+      if (e.touches && e.touches[0]) {
+        handleMove(e.touches[0]);
+      }
+    }, { passive: true });
+    overlay.addEventListener("touchend", handleLeave);
+  }
+};
+
+const loadBacktestData = async (force = false) => {
+  const range = $("btRange")?.value || "2y";
+  const freq = $("btFreq")?.value || "5";
+  const topN = $("btTopN")?.value || "2";
+  const atr = $("btAtr")?.value || "3.0";
+
+  const btn = $("btnRunBacktest");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ 正在回测演算中...";
+  }
+
+  try {
+    const url = `/api/backtest/run?range=${encodeURIComponent(range)}&rebalance_freq=${encodeURIComponent(freq)}&top_n=${encodeURIComponent(topN)}&atr_mult=${encodeURIComponent(atr)}&force=${force ? "1" : "0"}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.ok) {
+      alert("回测计算异常：" + (data.error || "未知错误"));
+      return;
+    }
+
+    currentBacktestData = data;
+    const perf = data.performance || {};
+    const period = data.period || {};
+
+    // 1. KPI Bindings
+    const stratRet = perf.strategy_total_return_pct ?? 0;
+    const spyRet = perf.benchmark_total_return_pct ?? 0;
+    const alpha = perf.alpha_pct ?? (stratRet - spyRet);
+
+    setText("btStratReturn", formatPct(stratRet));
+    const btStratEl = $("btStratReturn");
+    if (btStratEl) {
+      btStratEl.className = stratRet >= 0 ? "badge-success" : "badge-danger";
+    }
+
+    const alphaPill = $("btAlphaPill");
+    if (alphaPill) {
+      alphaPill.textContent = `Alpha ${formatPct(alpha)}`;
+      alphaPill.className = `metric-pill ${alpha >= 0 ? "pill-cyan" : "pill-rose"}`;
+    }
+
+    setText("btSpyReturn", formatPct(spyRet));
+    setText("btSharpe", formatNumber(perf.sharpe_ratio, 2));
+    setText("btVol", `年化波动率 ${formatNumber(perf.annualized_volatility_pct, 1)}%`);
+    setText("btMaxDd", formatPct(perf.strategy_max_drawdown_pct));
+    setText("btSpyMaxDd", `SPY 基准回撤 ${formatPct(perf.benchmark_max_drawdown_pct)}`);
+    setText("btWinRate", `${formatNumber(perf.win_rate_pct, 1)}%`);
+    setText("btTradesCount", `共 ${perf.total_trades ?? 0} 笔交易`);
+    setText("btCagr", formatPct(perf.strategy_cagr_pct));
+    setText("btCalmar", `卡玛比率 ${formatNumber(perf.calmar_ratio, 2)}`);
+
+    setText("btPeriodRange", `${period.start_date || "-"} ~ ${period.end_date || "-"} (${period.trading_days || 0} 交易日)`);
+
+    // 2. Render Equity Curve SVG
+    if (data.equity_curve) {
+      renderEquityChart(data.equity_curve);
+    }
+  } catch (err) {
+    console.error("Backtest load error:", err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "⚡ 运行量化实证回测";
+    }
+  }
+};
+
+/* ==========================================================================
+   11. Initialization & Event Binding
    ========================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   // Clock ticker
@@ -1023,6 +1306,12 @@ document.addEventListener("DOMContentLoaded", () => {
   $("refreshReviewBtn")?.addEventListener("click", loadReviewSnapshots);
   $("refreshWatchlistBtn")?.addEventListener("click", loadWatchlist);
   $("btnRecalculatePortfolio")?.addEventListener("click", recalculatePortfolio);
+  $("btnRunBacktest")?.addEventListener("click", () => loadBacktestData(false));
+
+  // Auto trigger on parameter changes
+  ["btRange", "btFreq", "btTopN", "btAtr"].forEach(id => {
+    $(id)?.addEventListener("change", () => loadBacktestData(false));
+  });
 
   // Hydrate All Data Parallelly on Startup
   loadAIModelsStatus();
@@ -1031,6 +1320,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadTechCatalysts();
   loadReviewSnapshots();
   loadWatchlist();
+  loadBacktestData(false);
 
   // Instantly Analyze NVDA.US so the screen opens with rich, living data!
   runDeepAnalyze("NVDA.US");

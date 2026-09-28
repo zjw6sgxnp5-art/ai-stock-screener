@@ -153,7 +153,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/backtest/run":
                 params = parse_qs(parsed.query)
                 range_str = params.get("range", ["2y"])[0]
-                json_response(self, run_quantitative_backtest(range_str=range_str))
+                rebal_freq = int(params.get("rebalance_freq", ["15"])[0] or 15)
+                top_n = int(params.get("top_n", ["3"])[0] or 3)
+                atr_mult = float(params.get("atr_mult", ["2.5"])[0] or 2.5)
+                force = params.get("force", ["0"])[0] in ("1", "true", "yes")
+                json_response(self, run_quantitative_backtest(
+                    range_str=range_str,
+                    rebalance_freq=rebal_freq,
+                    top_n=top_n,
+                    atr_mult=atr_mult,
+                    force_refresh=force
+                ))
                 return
 
             self.serve_static(parsed.path)

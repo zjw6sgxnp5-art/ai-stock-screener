@@ -11,14 +11,22 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.core.utils import utc_now_iso
+from backend.db import get_cache, set_cache
 
 
-def fetch_yahoo_history(symbol: str, range_str: str = "2y") -> Dict[str, Dict[str, float]]:
+def fetch_yahoo_history(symbol: str, range_str: str = "2y", force_refresh: bool = False) -> Dict[str, Dict[str, float]]:
     """
     Fetch daily OHLCV historical series from Yahoo Finance without external dependencies.
+    Caches raw bars in SQLite for 24 hours to accelerate backtest grid parameter exploration.
     """
-    ctx = ssl._create_unverified_context()
     clean_sym = symbol.replace("^", "%5E")
+    cache_key = f"raw_yahoo:{clean_sym}:{range_str}"
+    if not force_refresh:
+        cached = get_cache(cache_key)
+        if cached is not None and isinstance(cached, dict) and len(cached) > 0:
+            return cached
+
+    ctx = ssl._create_unverified_context()
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{clean_sym}?interval=1d&range={range_str}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
@@ -45,6 +53,8 @@ def fetch_yahoo_history(symbol: str, range_str: str = "2y") -> Dict[str, Dict[st
                     "low": float(l if l is not None else c),
                     "volume": float(v if v is not None else 0),
                 }
+        if series:
+            set_cache(cache_key, series, 86400)
         return series
     except Exception as exc:
         print(f"[Backtester] Fetch error for {symbol}: {exc}")
@@ -75,6 +85,8 @@ def run_quantitative_backtest(
     top_n: int = 3,
     max_sector_cap: float = 0.30,
     friction_pct: float = 0.001,
+    atr_mult: float = 2.5,
+    force_refresh: bool = False,
 ) -> Dict[str, Any]:
     """
     Run multi-factor quantitative backtest strictly using point-in-time sliding windows.
@@ -82,14 +94,20 @@ def run_quantitative_backtest(
     if not symbols:
         symbols = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "AMD"]
 
+    cache_key = f"backtest:{range_str}:{rebalance_freq}:{top_n}:{atr_mult}:{','.join(sorted(symbols))}"
+    if not force_refresh:
+        cached = get_cache(cache_key)
+        if cached is not None:
+            return cached
+
     # 1. Fetch benchmark, VIX, and candidate histories
-    print(f"[Backtester] Downloading historical data for {len(symbols)} candidates + benchmark...")
-    spy_data = fetch_yahoo_history(benchmark_symbol, range_str)
-    vix_data = fetch_yahoo_history("^VIX", range_str)
+    print(f"[Backtester] Loading historical data for {len(symbols)} candidates + benchmark...")
+    spy_data = fetch_yahoo_history(benchmark_symbol, range_str, force_refresh=force_refresh)
+    vix_data = fetch_yahoo_history("^VIX", range_str, force_refresh=force_refresh)
 
     stock_data: Dict[str, Dict[str, Dict[str, float]]] = {}
     for sym in symbols:
-        stock_data[sym] = fetch_yahoo_history(sym, range_str)
+        stock_data[sym] = fetch_yahoo_history(sym, range_str, force_refresh=force_refresh)
 
     # 2. Synchronize trading dates
     common_dates = sorted([d for d in spy_data.keys() if d in vix_data])
@@ -123,9 +141,9 @@ def run_quantitative_backtest(
                         be_stop = pos["entry_price"] * 1.01
                         if be_stop > pos["stop_loss"]:
                             pos["stop_loss"] = be_stop
-                    # 2. Dynamic trailing profit lock (Gain >= 20% -> trail by 2.5x ATR)
+                    # 2. Dynamic trailing profit lock (Gain >= 20% -> trail by atr_mult * ATR)
                     if gain >= 0.20:
-                        trail_stop = pos["highest_price"] - (2.5 * pos["atr"])
+                        trail_stop = pos["highest_price"] - (atr_mult * pos["atr"])
                         if trail_stop > pos["stop_loss"]:
                             pos["stop_loss"] = trail_stop
 
@@ -230,8 +248,8 @@ def run_quantitative_backtest(
                             "shares": shares,
                             "entry_price": pick["price"],
                             "highest_price": pick["price"],
-                            "initial_stop": round(pick["price"] - 2.5 * pick["atr"], 2),
-                            "stop_loss": round(pick["price"] - 2.5 * pick["atr"], 2),
+                            "initial_stop": round(pick["price"] - atr_mult * pick["atr"], 2),
+                            "stop_loss": round(pick["price"] - atr_mult * pick["atr"], 2),
                             "atr": pick["atr"],
                         }
 
@@ -259,7 +277,15 @@ def run_quantitative_backtest(
     calmar = abs(cagr_strat / mdd_strat) if mdd_strat < 0 else 0.0
     win_rate = (winning_trades / trades_count * 100.0) if trades_count > 0 else 0.0
 
-    return {
+    sampled_dates = list(sim_dates[::5])
+    sampled_strat = list(portfolio_equity[::5])
+    sampled_spy = list(benchmark_equity[::5])
+    if sampled_dates and sampled_dates[-1] != sim_dates[-1]:
+        sampled_dates.append(sim_dates[-1])
+        sampled_strat.append(portfolio_equity[-1])
+        sampled_spy.append(benchmark_equity[-1])
+
+    result = {
         "ok": True,
         "generated_at": utc_now_iso(),
         "period": {
@@ -283,11 +309,13 @@ def run_quantitative_backtest(
             "win_rate_pct": round(win_rate, 1),
         },
         "equity_curve": {
-            "dates": sim_dates[::5],
-            "strategy": portfolio_equity[::5],
-            "benchmark": benchmark_equity[::5],
+            "dates": sampled_dates,
+            "strategy": sampled_strat,
+            "benchmark": sampled_spy,
         },
     }
+    set_cache(cache_key, result, 7200)
+    return result
 
 
 if __name__ == "__main__":
