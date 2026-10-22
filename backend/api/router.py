@@ -14,12 +14,19 @@ from backend.core.utils import number_from, parse_symbol_list, utc_now_iso
 from backend.db import (
     add_watchlist_symbol,
     archive_recommendation_snapshot,
+    delete_dossier,
     get_review_snapshots,
+    list_dossier_history,
     list_watchlist,
     recent_analysis_runs,
     remove_watchlist_symbol,
 )
 from backend.services.ai_engine import check_ai_models_status, run_cli_analysis_for_symbol
+from backend.services.dossier_service import (
+    get_or_create_dossier,
+    hot_sync_price_and_technicals,
+    refresh_dossier_module,
+)
 from backend.services.auto_evolution import get_autonomous_status, run_full_autonomous_cycle
 from backend.services.backtester import run_quantitative_backtest, run_sensitivity_analysis
 from backend.services.macro_service import get_macro_climate
@@ -28,9 +35,10 @@ from backend.services.market_data import (
     fetch_stock_bundle,
     longbridge_status,
 )
-from backend.services.portfolio_allocator import calculate_portfolio_allocation
+from backend.services.portfolio_allocator import calculate_portfolio_allocation, inspect_existing_holdings
 from backend.services.screener import (
     get_daily_screener_recommendations,
+    get_screener_progress,
     run_compare,
     run_screener,
 )
@@ -104,14 +112,28 @@ class RequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/datasources/longbridge/status":
                 json_response(self, longbridge_status())
                 return
-            if parsed.path == "/api/macro/climate":
+            if parsed.path in ("/api/macro", "/api/macro/climate"):
                 json_response(self, {"ok": True, "macro": get_macro_climate()})
                 return
+            if parsed.path == "/api/universe/stocks":
+                from backend.core.stock_registry import get_all_registered_stocks
+                json_response(self, {"ok": True, "stocks": get_all_registered_stocks()})
+                return
             if parsed.path == "/api/tech/catalysts":
-                json_response(self, {"ok": True, "tech": get_tech_catalysts()})
+                json_response(self, {
+                    "ok": True,
+                    "status": "disabled",
+                    "note": "催化雷达按设计停用（无合规数据源接入，拒绝提供虚假事件）",
+                    "tech": []
+                })
+                return
+            if parsed.path == "/api/screener/progress":
+                json_response(self, {"ok": True, "progress": get_screener_progress()})
                 return
             if parsed.path == "/api/screener/daily":
-                json_response(self, {"ok": True, "screener": get_daily_screener_recommendations()})
+                params = parse_qs(parsed.query)
+                force = params.get("force", ["0"])[0] in ("1", "true", "yes")
+                json_response(self, {"ok": True, "screener": get_daily_screener_recommendations(force=force)})
                 return
             if parsed.path == "/api/ai/models":
                 json_response(self, {"ok": True, "models": check_ai_models_status()})
@@ -127,6 +149,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 limit = int(params.get("limit", ["12"])[0] or 12)
                 json_response(self, {"ok": True, "runs": recent_analysis_runs(limit)})
                 return
+            if parsed.path == "/api/dossier":
+                params = parse_qs(parsed.query)
+                symbol = params.get("symbol", ["NVDA.US"])[0]
+                force = params.get("force", ["0"])[0] in ("1", "true", "yes")
+                json_response(self, {"ok": True, "dossier": get_or_create_dossier(symbol, force_refresh=force)})
+                return
+            if parsed.path == "/api/dossiers/history":
+                json_response(self, {"ok": True, "history": list_dossier_history()})
+                return
             if parsed.path == "/api/analyze":
                 params = parse_qs(parsed.query)
                 symbol = params.get("symbol", ["NVDA.US"])[0]
@@ -139,12 +170,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                 default_symbols = [item["symbol"] for item in list_watchlist()] if universe == "watchlist" else None
                 symbols = parse_symbol_list(params.get("symbols", [""])[0], default=default_symbols)
                 limit = int(params.get("limit", ["10"])[0] or 10)
-                json_response(self, run_screener(symbols, limit=max(1, min(limit, 30))))
+                res = run_screener(symbols, limit=max(1, min(limit, 30)))
+                if isinstance(res, dict) and "ok" not in res:
+                    res["ok"] = True
+                json_response(self, res)
                 return
             if parsed.path == "/api/compare":
                 params = parse_qs(parsed.query)
                 symbols = parse_symbol_list(params.get("symbols", [""])[0], max_count=5)
-                json_response(self, run_compare(symbols))
+                res = run_compare(symbols)
+                if isinstance(res, dict) and "ok" not in res:
+                    res["ok"] = True
+                json_response(self, res)
                 return
             if parsed.path == "/api/report/export":
                 params = parse_qs(parsed.query)
@@ -198,6 +235,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 raise AppError("请求体 JSON 格式异常。", 400)
 
+            if parsed.path == "/api/dossier/refresh-module":
+                symbol = body.get("symbol", "NVDA.US")
+                module_name = body.get("module", "core_products")
+                json_response(self, refresh_dossier_module(symbol, module_name))
+                return
+            if parsed.path == "/api/dossier/sync-price":
+                symbol = body.get("symbol", "NVDA.US")
+                json_response(self, hot_sync_price_and_technicals(symbol))
+                return
+            if parsed.path == "/api/dossiers/delete":
+                symbol = body.get("symbol", "")
+                json_response(self, {"ok": True, "deleted": delete_dossier(symbol)})
+                return
             if parsed.path == "/api/analyze/cli":
                 symbol = body.get("symbol", "NVDA.US")
                 model = body.get("model", "gemini")
@@ -225,6 +275,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                     macro_exposure_limit_pct=macro_limit
                 )
                 json_response(self, {"ok": True, "portfolio": plan})
+                return
+            if parsed.path == "/api/portfolio/inspect":
+                holdings = body.get("holdings", [])
+                max_sector = number_from(body.get("max_sector_exposure_pct")) or 30.0
+                json_response(self, inspect_existing_holdings(holdings, max_sector_exposure_pct=max_sector))
                 return
             if parsed.path == "/api/records/archive":
                 snapshot = archive_recommendation_snapshot(

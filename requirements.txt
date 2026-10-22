@@ -1,2 +1,4 @@
+# 本项目核心架构为零重依赖微内核（纯 Python 3.10+ 标准库：http.server + sqlite3 + urllib）
+# 行情与研判走本机 CLI（longbridge CLI, grok CLI, gemini CLI）
+# 如需使用 OpenAI API 备用通道可安装：
 openai>=1.0.0
-

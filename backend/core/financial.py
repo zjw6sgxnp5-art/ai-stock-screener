@@ -32,7 +32,9 @@ def yoy_percent(indicators: Dict[str, Dict[str, Any]], field: str) -> Optional[f
     value = financial_value(indicators, field, "yoy")
     if value is None:
         return None
-    return value * 100 if abs(value) <= 2 else value
+    # Longbridge API returns decimal ratios (e.g. 0.89 for +89%, 2.5735 for +257.35%, -0.12 for -12%)
+    return value * 100
+
 
 
 def analyze_financial_quality(financials: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -57,7 +59,7 @@ def analyze_financial_quality(financials: Optional[Dict[str, Any]]) -> Dict[str,
 
     if not indicators:
         return {
-            "score": 40,
+            "score": None,
             "verdict": "财务数据不足",
             "positives": [],
             "red_flags": ["财务快照缺失，无法判断增长质量、利润率和资产负债结构。"],
@@ -117,14 +119,16 @@ def analyze_financial_quality(financials: Optional[Dict[str, Any]]) -> Dict[str,
         red_flags.append("当前财务快照未发现强红旗，但仍需补充现金流质量和多期趋势。")
 
     score = round(clamp(score), 1)
-    if score >= 78:
-        verdict = "财务质量强"
-    elif score >= 62:
-        verdict = "财务质量较好"
-    elif score >= 45:
-        verdict = "财务质量中性"
+    # 规矩3：注明「单期利润表，无现金流」，缺少现金流时封顶不超过 70 分
+    score = min(score, 70.0)
+    positives.insert(0, "单期利润表，无现金流 (质量分封顶 70 分)")
+
+    if score >= 65:
+        verdict = "财务质量较好 (单期)"
+    elif score >= 50:
+        verdict = "财务质量中性 (单期)"
     else:
-        verdict = "财务质量承压"
+        verdict = "财务质量承压 (单期)"
 
     return {
         "score": score,
@@ -370,9 +374,10 @@ def analyze_risk_radar(
             thesis_breakers.append(f"{item.get('category')}：{item.get('title')}")
 
     filing_titles = " ".join(item.get("title", "") or "" for item in filings[:8]).lower()
-    if any(term in filing_titles for term in ("8-k", "investigation", "litigation", "risk", "10-k")):
+    special_risk_keywords = ("investigation", "litigation", "subpoena", "restatement", "material weakness", "sec probe", "lawsuit")
+    if any(term in filing_titles for term in special_risk_keywords):
         risk_score += 8
-        key_risks.append("近期公告/SEC 文件中存在需要精读的风险类文件。")
+        key_risks.append("近期公告/SEC 文件中检出非日常监管调查、诉讼或财务重述风险。")
 
     news_titles = " ".join(item.get("title", "") or "" for item in news[:12]).lower()
     if any(term in news_titles for term in ("cuts guidance", "probe", "lawsuit", "misses", "recall", "downgrade")):
@@ -380,14 +385,9 @@ def analyze_risk_radar(
         key_risks.append("近期新闻标题出现负面催化词，需要复核影响范围。")
 
     if not key_risks:
-        key_risks.append("规则未发现强风险信号，但不等于风险不存在。")
-    thesis_breakers.extend(
-        [
-            "下一份财报或管理层指引显著低于市场预期。",
-            "核心业务增长放缓但估值仍依赖高增长假设。",
-            "监管调查、重大诉讼或内部控制问题升级。",
-        ]
-    )
+        key_risks.append("未检出显著重大公开违规或财务警报信号。")
+    if not thesis_breakers:
+        thesis_breakers.append("未检出已知历史公开争议事项；重点跟踪下期财报指引兑现度。")
 
     risk_score = round(clamp(risk_score), 1)
     if risk_score >= 70:
@@ -415,6 +415,7 @@ def build_factor_breakdown(
     risk_radar: Optional[Dict[str, Any]],
     regime_weights: Optional[Dict[str, int]] = None,
     capex_verified: Optional[bool] = None,
+    risk_multiplier: float = 1.0,
 ) -> Dict[str, Any]:
     """
     Break down multi-factor attribution: Momentum, Liquidity, Quality, Valuation, Catalyst, Risk.
@@ -478,10 +479,14 @@ def build_factor_breakdown(
         }
     )
 
+    # 3. 基本面质量因子 (严谨口径：单期利润表无现金流，封顶 70 分)
     quality_score = 45.0
     quality_evidence: List[str] = []
+    has_quality_data = False
     if financials and financials.get("indicators"):
+        has_quality_data = True
         quality_score += 8
+        quality_evidence.append("单期利润表，无现金流 (质量分封顶 70 分)")
         for item in financials["indicators"][:8]:
             name = item.get("name") or item.get("field")
             yoy = number_from(item.get("yoy"))
@@ -493,77 +498,106 @@ def build_factor_breakdown(
                 quality_evidence.append(f"{name} {val}")
             if len(quality_evidence) >= 3:
                 break
+        quality_score = min(quality_score, 70.0)
     else:
-        quality_evidence.append("财务快照缺失，质量评分降权")
+        quality_evidence.append("财务快照缺失，不计入综合评分")
+
     factors.append(
         {
             "key": "quality",
-            "name": "基本面质量",
-            "score": round(clamp(quality_score), 1),
-            "weight": weights.get("quality", 20),
+            "name": "基本面质量 (单期利润表)",
+            "score": round(clamp(quality_score), 1) if has_quality_data else None,
+            "weight": weights.get("quality", 20) if has_quality_data else 0,
+            "has_data": has_quality_data,
             "evidence": quality_evidence[:3],
         }
     )
 
+    # 4. 估值合理性因子
     valuation_score = 50.0
     valuation_evidence: List[str] = []
-    pe = valuation.get("pe_raw") if valuation else None
-    if pe is not None:
-        if pe <= 0:
-            valuation_score -= 18
-            valuation_evidence.append("PE 为负或异常，估值解释难度较高")
-        elif pe <= 25:
+    pe = number_from(valuation.get("pe_raw") or valuation.get("pe")) if valuation else None
+    ps = number_from(valuation.get("ps_raw") or valuation.get("ps")) if valuation else None
+    pb = number_from(valuation.get("pb_raw") or valuation.get("pb")) if valuation else None
+    peer_premium = number_from(valuation.get("peer_premium_pct") or valuation.get("premium_pct")) if valuation else None
+
+    has_val_data = False
+    if pe is not None and pe > 0:
+        has_val_data = True
+        if pe <= 25:
             valuation_score += 15
-            valuation_evidence.append(f"PE {pe:.1f}，相对不激进")
-        elif pe <= 60:
+            valuation_evidence.append(f"PE {pe:.1f}x，相对不激进")
+        elif pe <= 55:
             valuation_score += 2
-            valuation_evidence.append(f"PE {pe:.1f}，需要增长兑现")
+            valuation_evidence.append(f"PE {pe:.1f}x，需要持续增长兑现")
         else:
-            valuation_score -= 15
-            valuation_evidence.append(f"PE {pe:.1f}，估值对预期敏感")
-    else:
-        valuation_evidence.append("估值数据缺失")
+            valuation_score -= 16
+            valuation_evidence.append(f"PE {pe:.1f}x，高估值对预期极其敏感")
+    elif ps is not None and ps > 0:
+        has_val_data = True
+        if ps <= 5.0:
+            valuation_score += 12
+            valuation_evidence.append(f"市销率 PS {ps:.1f}x，相对平价")
+        elif ps <= 15.0:
+            valuation_score -= 2
+            valuation_evidence.append(f"市销率 PS {ps:.1f}x，成长溢价")
+        elif ps <= 30.0:
+            valuation_score -= 14
+            valuation_evidence.append(f"市销率 PS {ps:.1f}x，高成长但倍数承压")
+        else:
+            valuation_score -= 22
+            valuation_evidence.append(f"市销率 PS {ps:.1f}x，极度高估值风险")
+    elif pe is not None and pe <= 0:
+        has_val_data = True
+        valuation_score -= 18
+        valuation_evidence.append("PE 为负或异常，缺乏稳健利润支撑")
+
+    if peer_premium is not None:
+        has_val_data = True
+        if peer_premium > 50.0:
+            valuation_score -= 8
+            valuation_evidence.append(f"同业估值显著高溢价 +{peer_premium:.1f}%")
+        elif peer_premium < -15.0:
+            valuation_score += 8
+            valuation_evidence.append(f"同业估值折价 {peer_premium:.1f}%，具备比价优势")
+
     if rating and rating.get("target") and quote.get("last"):
         upside = (rating["target"] / quote["last"] - 1) * 100
         valuation_score += max(min(upside * 0.35, 12), -12)
         valuation_evidence.append(f"机构目标价隐含 {upside:.1f}% 空间")
+        has_val_data = True
+
+    if not has_val_data:
+        valuation_evidence.append("估值乘数数据缺失，不计入综合评分")
+
     factors.append(
         {
             "key": "valuation",
             "name": "估值合理性",
-            "score": round(clamp(valuation_score), 1),
-            "weight": weights.get("valuation", 15),
+            "score": round(clamp(valuation_score), 1) if has_val_data else None,
+            "weight": weights.get("valuation", 15) if has_val_data else 0,
+            "has_data": has_val_data,
             "evidence": valuation_evidence[:3],
         }
     )
 
-    catalyst_score = 45.0 + min(len(news) * 3, 24)
-    catalyst_evidence = [f"近期新闻 {len(news)} 条"]
+    # 5. 消息与催化因子 (规矩3：整改按要求改为展示项，不进 65 分闸门，新闻条数与关键词不再加分)
+    catalyst_evidence = [f"近期市场资讯 {len(news)} 条 (仅作展示，不计入综合评分)"]
     if rating and rating.get("recommend"):
-        catalyst_score += 6
-        catalyst_evidence.append(f"机构建议 {rating['recommend']}")
-    catalyst_terms = " ".join(item.get("title", "") for item in news[:8]).lower()
-    if any(term in catalyst_terms for term in ("earnings", "guidance", "launch", "approval", "ai", "财报", "指引")):
-        catalyst_score += 8
-        catalyst_evidence.append("新闻中出现财报/产品/AI 等潜在催化词")
-
-    if capex_verified is False:
-        catalyst_score -= 14.0
-        catalyst_evidence.append("⚠️ 另类数据未获财报 Capex/研发验证，扣除冲榜虚火分")
-    elif capex_verified is True:
-        catalyst_score += 6.0
-        catalyst_evidence.append("✅ 另类爆款获资本开支/研发费用真实财务支撑")
-
+        catalyst_evidence.append(f"机构建议评级: {rating['recommend']}")
     factors.append(
         {
             "key": "catalyst",
-            "name": "消息与催化",
-            "score": round(clamp(catalyst_score), 1),
-            "weight": weights.get("catalyst", 20),
+            "name": "消息与催化 (仅展示)",
+            "score": None,
+            "weight": 0,
+            "has_data": bool(news),
+            "is_display_only": True,
             "evidence": catalyst_evidence[:3],
         }
     )
 
+    # 6. 风险惩罚
     risk_penalty = 0.0
     risk_evidence: List[str] = []
     volatility = technical.get("volatility_20d")
@@ -591,20 +625,169 @@ def build_factor_breakdown(
         }
     )
 
-    weighted_positive = sum(item["score"] * item["weight"] for item in factors if item["weight"] > 0)
-    positive_weight = sum(item["weight"] for item in factors if item["weight"] > 0)
-    composite = weighted_positive / positive_weight if positive_weight else 50.0
-    composite += risk_penalty
+    # 规矩1：没有数就空着，空着的项不进综合分，核心项缺失直接不给综合分
+    valid_positive = [item for item in factors if item.get("weight", 0) > 0 and item.get("score") is not None]
+    weighted_positive = sum(item["score"] * item["weight"] for item in valid_positive)
+    positive_weight = sum(item["weight"] for item in valid_positive)
+
+    if (not has_quality_data and not has_val_data) or positive_weight < 30:
+        composite = None
+    else:
+        raw_comp = weighted_positive / positive_weight if positive_weight else 50.0
+        effective_risk_penalty = risk_penalty * (risk_multiplier if risk_multiplier is not None else 1.0)
+        composite = round(clamp(raw_comp + effective_risk_penalty), 1)
+
     for item in factors:
-        if item["weight"] > 0 and positive_weight:
+        if item.get("weight", 0) > 0 and positive_weight and item.get("score") is not None:
             item["contribution"] = round(item["score"] * item["weight"] / positive_weight, 2)
         else:
-            item["contribution"] = round(item["score"], 2)
+            item["contribution"] = 0.0
+
     return {
-        "composite": round(clamp(composite), 1),
+        "composite": composite,
         "factors": factors,
-        "formula": "多因子分 = Σ(正向因子分 × 权重) / Σ正向权重 + 风险惩罚",
+        "formula": "多因子分 = Σ(有效因子分 × 权重) / Σ有效正向权重 + 风险惩罚 (催化不参与打分)",
         "positive_weight": positive_weight,
         "weighted_positive": round(weighted_positive, 2),
         "risk_penalty": round(risk_penalty, 2),
+    }
+
+
+def analyze_capital_allocation_and_shareholder_yield(
+    financials: Optional[Dict[str, Any]],
+    valuation: Optional[Dict[str, Any]],
+    quote: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Evaluate Buy-Side Capital Allocation & Balance Sheet Reality:
+    1. Ground-Truth Balance Sheet & Leverage (Debt Ratio, Negative Equity Detection)
+    2. Real DuPont Decomposition (Net Margin, Asset Turnover, Equity Multiplier)
+    3. Shareholder Yield (Only Verified Dividend Yield, No Fabricated Buyback Yield)
+    4. Honest Disclosure: Flags missing Cash Flow / Interest Expense data instead of fabricating ROIC/WACC.
+    """
+    indicators = indicator_lookup(financials)
+    sym = (quote or {}).get("symbol") or ""
+    p = (quote or {}).get("last") or 0.0
+
+    roe = financial_value(indicators, "roe")
+    net_margin = financial_value(indicators, "net_profit_margin")
+    total_assets = financial_value(indicators, "total_assets")
+    total_debts = financial_value(indicators, "total_debts")
+    revenue = financial_value(indicators, "operating_revenue")
+    net_profit = financial_value(indicators, "net_profit")
+    bps = financial_value(indicators, "bps")
+
+    # 1. Real Balance Sheet & Debt Ratios
+    debt_assets_pct = None
+    if total_assets and total_debts is not None and total_assets > 0:
+        debt_assets_pct = round((total_debts / total_assets) * 100, 1)
+
+    equity = (total_assets - total_debts) if (total_assets is not None and total_debts is not None) else None
+    equity_val = round(equity, 2) if equity is not None else None
+
+    # Detect negative book equity (e.g. MCD, SBUX, HD) caused by massive historical buybacks
+    is_negative_equity = (equity is not None and equity <= 0)
+
+    # 2. Real DuPont Decomposition
+    nm_val = round(net_margin, 1) if net_margin is not None else (
+        round((net_profit / revenue) * 100, 1) if (net_profit and revenue and revenue > 0) else None
+    )
+    asset_turnover = round(revenue / total_assets, 2) if (revenue and total_assets and total_assets > 0) else None
+    
+    equity_multiplier = None
+    if total_assets and equity and equity > 0:
+        equity_multiplier = round(total_assets / equity, 2)
+
+    if is_negative_equity:
+        dupont_driver = "负净资产特殊资本结构 (Negative Book Equity)"
+        dupont_desc = f"公司账面净资产为负值 (${equity_val}M)，通常源于长期以超过净利的规模大额回购注销普通股。常规权益乘数与账面 ROE ({roe}%) 已失真，应重点考察净利率 ({nm_val}%) 与资产周转率 ({asset_turnover}x)。"
+    elif nm_val is not None and nm_val >= 25.0:
+        dupont_driver = "高净利率与产品定价权驱动 (Margin-Driven)"
+        dupont_desc = f"核心回报引擎源于高达 {nm_val}% 的净利率，体现出较强的产品壁垒与定价护城河。"
+    elif asset_turnover is not None and asset_turnover >= 1.2:
+        dupont_driver = "高效资产周转驱动 (Turnover-Driven)"
+        dupont_desc = f"核心回报由资产周转效率 (年化周转 {asset_turnover} 次) 驱动，体现运营与供应链流转效率。"
+    elif equity_multiplier is not None and equity_multiplier >= 2.5:
+        dupont_driver = "适度财务杠杆驱动 (Leverage-Amplified)"
+        dupont_desc = f"ROE 受到财务杠杆乘数 ({equity_multiplier}x) 放大，资产负债率约 {debt_assets_pct}%，需关注利息与债务安全性。"
+    else:
+        dupont_driver = "均衡运营型驱动 (Balanced Profile)"
+        dupont_desc = f"净利率 ({nm_val or '--'}%) 与周转率 ({asset_turnover or '--'}x) 处于行业稳态区间。"
+
+    # 3. Shareholder Yield (Real Dividend Yield from Longbridge, No Fake Buyback Assumptions)
+    dividend_yield_pct = (valuation or {}).get("dividend_yield")
+    if dividend_yield_pct is None and (quote or {}).get("dividend_yield"):
+        dividend_yield_pct = quote.get("dividend_yield")
+    dividend_yield_val = round(float(dividend_yield_pct), 2) if (dividend_yield_pct is not None and float(dividend_yield_pct) >= 0) else None
+
+    # 4. Solvency Assessment Based on Real Balance Sheet (No Fake 45x/16.5x/6.2x Interest Coverage)
+    if is_negative_equity:
+        safety_grade = "负净资产结构 · 需关注债务再融资"
+        safety_badge = "CAUTION"
+        stress_test = "账面净资产被回购压缩为负，虽通常伴随充沛经营现金流，但账面资产缓冲垫为零，在信用收紧或利率长期处于高位时需关注债务滚续风险。"
+    elif debt_assets_pct is not None:
+        if debt_assets_pct <= 35.0:
+            safety_grade = "低杠杆健康型资产负债表"
+            safety_badge = "FORTRESS"
+            stress_test = f"资产负债率仅 {debt_assets_pct}%，债务负担轻，具备充足的抗宏观下行与加息周期安全垫。"
+        elif debt_assets_pct <= 60.0:
+            safety_grade = "中度适中杠杆"
+            safety_badge = "HEALTHY"
+            stress_test = f"资产负债率约 {debt_assets_pct}%，处于行业可控中性区间，偿债压力适中。"
+        else:
+            safety_grade = "高财务杠杆监控"
+            safety_badge = "CAUTION"
+            stress_test = f"资产负债率达 {debt_assets_pct}%，债务占比较重，若营收增速下滑需关注利息偿付对利润的侵蚀。"
+    else:
+        safety_grade = "资产负债数据不足"
+        safety_badge = "NEUTRAL"
+        stress_test = "长桥未返回完整资产负债表快照，偿债压力需复核官方财报。"
+
+    return {
+        "title": "资本结构、杜邦拆解与股东回报 (Capital Structure & Shareholder Yield)",
+        "summary_verdict": f"资产负债结构评定为【{safety_grade}】(资产负债率 {debt_assets_pct or '--'}%)，杜邦驱动类型为【{dupont_driver}】。{f'长桥当前披露股息率为 {dividend_yield_val}%' if dividend_yield_val is not None else '长桥单期报表未披露股息率'}；由于长桥单期报表未包含现金流量表，回购明细与利息保障倍数未取得。",
+        "capital_persona": {
+            "name": "真实报表透视型",
+            "tagline": "基于长桥最新一期公开财报事实核算，不采用任何经验常数编造数据",
+            "badge": safety_badge
+        },
+        "cash_waterfall": None,  # 严肃买方原则：单期报表未取得现金流量表，绝不凭空捏造瀑布图
+        "waterfall_disclaimer": "长桥基础接口未提供多期现金流量表与 Capex 明细，系统已关闭虚拟现金流瀑布图。",
+        "economic_spread": {
+            "roic_pct": None,
+            "wacc_pct": None,
+            "spread_pct": None,
+            "status": "指标未取得",
+            "note": "长桥单期报表未披露 EBIT、所得税率及付息债务结构，系统杜绝用 ROE 盲目反推虚假 ROIC。"
+        },
+        "dupont_decomposition": {
+            "net_margin_pct": nm_val,
+            "asset_turnover": asset_turnover,
+            "equity_multiplier": equity_multiplier,
+            "roe_pct": round(roe, 1) if (roe is not None and not is_negative_equity) else roe,
+            "is_negative_equity": is_negative_equity,
+            "core_driver": dupont_driver,
+            "desc": dupont_desc
+        },
+        "shareholder_yield": {
+            "total_yield_pct": dividend_yield_val,
+            "dividend_yield_pct": dividend_yield_val,
+            "buyback_yield_pct": None,  # 未取得现金流回购数据，绝不编造
+            "buyback_quality": "现金流量表未取得" if dividend_yield_val is None else "仅取得已公布股息率",
+            "comment": "长桥未返回完整现金流量表中的股票回购净额与现金流去向，系统仅如实呈现已核实股息率。"
+        },
+        "balance_sheet_fortress": {
+            "debt_to_assets_pct": debt_assets_pct,
+            "total_assets": total_assets,
+            "total_debts": total_debts,
+            "equity": equity_val,
+            "is_negative_equity": is_negative_equity,
+            "interest_coverage_x": None,  # 绝不硬填 45x/16.5x/6.2x
+            "interest_coverage_note": "长桥单期报表未单独披露利息支出，利息保障倍数未取得；以资产负债率评估账面财务杠杆。",
+            "grade": safety_grade,
+            "badge": safety_badge,
+            "stress_test": stress_test,
+            "net_margin_pct": nm_val,
+            "roe_pct": roe
+        }
     }

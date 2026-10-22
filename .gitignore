@@ -6,6 +6,8 @@ __pycache__/
 venv/
 data/*.sqlite
 data/*.sqlite-*
+data/*.db
+*.db
 !data/.gitkeep
 reports/*.md
 !reports/.gitkeep
@@ -15,4 +17,6 @@ app_legacy_backup.py
 node_modules/
 dist/
 build/
+.vscode/
+
 

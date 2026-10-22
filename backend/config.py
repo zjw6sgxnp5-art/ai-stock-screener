@@ -40,12 +40,12 @@ def _resolve_cli_bin(env_name: str, cmd_name: str, fallback_path: str) -> str:
 
 # External CLI Binaries
 LONG_BRIDGE_BIN = os.environ.get("LONG_BRIDGE_BIN", shutil.which("longbridge") or "longbridge")
-GROK_BIN = _resolve_cli_bin("GROK_BIN", "grok", "/Users/karma/.grok/bin/grok")
-GEMINI_BIN = _resolve_cli_bin("GEMINI_BIN", "gemini", "/Users/karma/.local/bin/gemini")
+GROK_BIN = _resolve_cli_bin("GROK_BIN", "grok", str(Path.home() / ".grok" / "bin" / "grok"))
+GEMINI_BIN = _resolve_cli_bin("GEMINI_BIN", "gemini", str(Path.home() / ".local" / "bin" / "gemini"))
 DEFAULT_TIMEOUT = int(os.environ.get("LONG_BRIDGE_TIMEOUT", "25"))
-DEFAULT_LLM_MODEL = os.environ.get("AI_STOCK_LLM_MODEL", "gpt-5.2")
+DEFAULT_LLM_MODEL = os.environ.get("AI_STOCK_LLM_MODEL", "gemini-1.5-pro")
 
-# Universe & Screening Symbols
+# Universe & Screening Symbols (22 US Liquid Leaders - Excludes Broad ETFs)
 DEFAULT_SCREENER_SYMBOLS = [
     "NVDA.US",
     "MSFT.US",
@@ -56,15 +56,22 @@ DEFAULT_SCREENER_SYMBOLS = [
     "AVGO.US",
     "AMD.US",
     "TSLA.US",
-    "QQQ.US",
+    "NFLX.US",
+    "COST.US",
+    "PLTR.US",
+    "QCOM.US",
+    "INTC.US",
+    "MU.US",
+    "ARM.US",
+    "CRM.US",
+    "ORCL.US",
+    "PANW.US",
+    "NOW.US",
+    "KO.US",
+    "ASML.US",
 ]
 
-DEFAULT_UNIVERSE = [
-    "AAPL.US", "MSFT.US", "NVDA.US", "AMZN.US", "GOOGL.US", "META.US",
-    "TSLA.US", "AVGO.US", "AMD.US", "NFLX.US", "COST.US", "PLTR.US",
-    "SMCI.US", "QCOM.US", "INTC.US", "TXN.US", "MU.US", "ARM.US",
-    "SPY.US", "QQQ.US"
-]
+DEFAULT_UNIVERSE = list(DEFAULT_SCREENER_SYMBOLS)
 
 
 class AppError(Exception):

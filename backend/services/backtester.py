@@ -164,20 +164,20 @@ def run_quantitative_backtest(
         if (idx - last_rebalance_idx) >= rebalance_freq:
             last_rebalance_idx = idx
 
-            # 1. Macro Regime via VIX
+            # 1. Macro Regime via VIX (aligned with macro_service)
             vix_val = vix_data[dt]["close"]
             if vix_val < 18.0:
-                regime = "RISK_ON"
-                target_exposure = 0.95
+                regime = "LOW_VIX_EXPANSION"
+                target_exposure = 0.85
             elif vix_val <= 23.0:
-                regime = "NEUTRAL"
-                target_exposure = 0.75
+                regime = "MODERATE_VIX_CONSOLIDATION"
+                target_exposure = 0.65
             elif vix_val <= 28.0:
-                regime = "CAUTION"
-                target_exposure = 0.45
+                regime = "ELEVATED_VIX_CORRECTION"
+                target_exposure = 0.40
             else:
-                regime = "PANIC"
-                target_exposure = 0.15
+                regime = "EXTREME_VOLATILITY"
+                target_exposure = 0.0
 
             # 2. Point-in-time scoring for candidates
             hist_idx = common_dates.index(dt)
@@ -285,34 +285,56 @@ def run_quantitative_backtest(
         sampled_strat.append(portfolio_equity[-1])
         sampled_spy.append(benchmark_equity[-1])
 
-    result = {
-        "ok": True,
-        "generated_at": utc_now_iso(),
+    equity_curve_list = [
+        {
+            "date": d,
+            "strategy_nav": s,
+            "benchmark_nav": b
+        }
+        for d, s, b in zip(sampled_dates, sampled_strat, sampled_spy)
+    ]
+
+    perf_dict = {
+        "strategy_total_return_pct": round(total_strat_return, 2),
+        "benchmark_total_return_pct": round(total_spy_return, 2),
+        "alpha_pct": round(alpha, 2),
+        "strategy_cagr_pct": round(cagr_strat, 2),
+        "benchmark_cagr_pct": round(cagr_spy, 2),
+        "max_drawdown_pct": mdd_strat,
+        "strategy_max_drawdown_pct": mdd_strat,
+        "benchmark_max_drawdown_pct": mdd_spy,
+        "annualized_volatility_pct": round(vol * 100.0, 2),
+        "sharpe_ratio": round(sharpe, 2),
+        "calmar_ratio": round(calmar, 2),
+        "total_trades": trades_count,
+        "total_rebalance_events": trades_count,
+        "win_rate_pct": round(win_rate, 1),
+    }
+
+    backtest_bundle = {
+        **perf_dict,
         "period": {
             "start_date": sim_dates[0],
             "end_date": sim_dates[-1],
             "trading_days": len(sim_dates),
             "years": round(years, 2),
         },
-        "performance": {
-            "strategy_total_return_pct": round(total_strat_return, 2),
-            "benchmark_total_return_pct": round(total_spy_return, 2),
-            "alpha_pct": round(alpha, 2),
-            "strategy_cagr_pct": round(cagr_strat, 2),
-            "benchmark_cagr_pct": round(cagr_spy, 2),
-            "strategy_max_drawdown_pct": mdd_strat,
-            "benchmark_max_drawdown_pct": mdd_spy,
-            "annualized_volatility_pct": round(vol * 100.0, 2),
-            "sharpe_ratio": round(sharpe, 2),
-            "calmar_ratio": round(calmar, 2),
-            "total_trades": trades_count,
-            "win_rate_pct": round(win_rate, 1),
-        },
-        "equity_curve": {
+        "performance": perf_dict,
+        "strategy_type": "动量相对强弱与 ATR 跟踪止损量化轮动 (纯量价策略)",
+        "disclaimer": "⚠️ 严肃买方准则说明：本历史回测仅使用日频量价历史（20日相对强弱 RS + 60日趋势 + 2.5xATR 跟踪止损 + VIX 仓位控制），未接入历史截面财务与现金流（长桥仅提供最新单期快照），故本回测收益仅代表动量轮动历史表现，绝不能作为长线基本面多因子评分或档案结论的历史业绩背书！",
+        "equity_curve": equity_curve_list,
+        "raw_equity_curve": {
             "dates": sampled_dates,
             "strategy": sampled_strat,
             "benchmark": sampled_spy,
-        },
+        }
+    }
+
+    result = {
+        "ok": True,
+        "generated_at": utc_now_iso(),
+        "backtest": backtest_bundle,
+        **backtest_bundle,
     }
     set_cache(cache_key, result, 7200)
     return result
@@ -366,13 +388,22 @@ def run_sensitivity_analysis(
 
             cell = {
                 "freq": freq,
+                "rebal_days": freq,
+                "rebalance_freq": freq,
                 "atr_mult": mult,
+                "atr_multiplier": mult,
+                "total_return": strat_ret,
+                "strategy_return": strat_ret,
                 "strat_return_pct": strat_ret,
                 "spy_return_pct": spy_ret,
+                "alpha": alpha,
                 "alpha_pct": alpha,
+                "sharpe": sharpe,
                 "sharpe_ratio": sharpe,
+                "max_drawdown": abs(max_dd),
                 "max_drawdown_pct": max_dd,
                 "win_rate_pct": win_rate,
+                "win_rate": win_rate,
                 "total_trades": trades,
             }
             row.append(cell)
@@ -386,19 +417,40 @@ def run_sensitivity_analysis(
 
         matrix.append(row)
 
+    grid = {}
+    for r in matrix:
+        for cell in r:
+            k = f"{cell['rebal_days']}d_{cell['atr_mult']}x"
+            grid[k] = cell
+
+    opt_combo = best_sharpe["combo"] or {}
+    optimal_dict = {
+        "best_alpha": best_alpha["combo"],
+        "best_sharpe": best_sharpe["combo"],
+        "min_drawdown": min_drawdown["combo"],
+        "rebalance_freq": opt_combo.get("freq", 15),
+        "atr_multiplier": opt_combo.get("atr_mult", 2.5),
+        "freq": opt_combo.get("freq", 15),
+        "atr": opt_combo.get("atr_mult", 2.5),
+    }
+
+    sensitivity_bundle = {
+        "range": range_str,
+        "top_n": top_n,
+        "rebalance_freqs": frequencies,
+        "frequencies": frequencies,
+        "atr_multipliers": atr_multipliers,
+        "grid": grid,
+        "matrix": matrix,
+        "optimal": optimal_dict,
+        "optimal_frontier": optimal_dict,
+    }
+
     result = {
         "ok": True,
         "generated_at": utc_now_iso(),
-        "range": range_str,
-        "top_n": top_n,
-        "frequencies": frequencies,
-        "atr_multipliers": atr_multipliers,
-        "matrix": matrix,
-        "optimal_frontier": {
-            "best_alpha": best_alpha["combo"],
-            "best_sharpe": best_sharpe["combo"],
-            "min_drawdown": min_drawdown["combo"],
-        },
+        "sensitivity": sensitivity_bundle,
+        **sensitivity_bundle
     }
     set_cache(cache_key, result, 7200)
     return result

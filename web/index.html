@@ -3,875 +3,915 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI 选股 · 机构级智能投研工作台</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <title>AI 个股深度投研档案终端 · 机构级长线投资研判</title>
+    <link rel="stylesheet" href="/styles.css?v=20261012_memo_v6" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   </head>
   <body>
-    <div class="app-shell">
-      <!-- 侧边全局导航 -->
-      <aside class="sidebar" aria-label="工作台导航">
-        <div class="brand-block">
-          <span class="brand-mark">US</span>
-          <div>
-            <strong>AI Stock Desk</strong>
-            <small>机构级美股智能投研终端</small>
-          </div>
+    <!-- 全局背景光晕 -->
+    <div class="ambient-glow glow-top"></div>
+    <div class="ambient-glow glow-bottom"></div>
+
+    <!-- 全局顶部工作台导航 (Global Institutional Navigation) -->
+    <header class="global-workbench-nav">
+      <div class="nav-brand-section">
+        <span class="nav-brand-icon">📈</span>
+        <div class="nav-brand-text">
+          <span class="nav-brand-title">AI 智能投研工作台</span>
+          <span class="nav-brand-sub">Workbench 2.0</span>
+        </div>
+        <div class="nav-status-indicator" title="数据源与模型状态">
+          <span class="live-dot"></span>
+          <span id="globalNavStatusText">长桥 / Yahoo 混合流 · 多因子量化引擎</span>
+        </div>
+      </div>
+
+      <nav class="nav-primary-tabs" id="globalNavTabs">
+        <button type="button" class="global-nav-tab active" data-view="screenerSection">
+          <span class="tab-icon">⚡</span>
+          <span>智能多因子选股</span>
+          <span class="nav-tab-pill">每日 Top 6</span>
+        </button>
+        <button type="button" class="global-nav-tab" data-view="dossierSection">
+          <span class="tab-icon">🔍</span>
+          <span>个股深度档案</span>
+        </button>
+        <button type="button" class="global-nav-tab" data-view="compareSection">
+          <span class="tab-icon">⚖️</span>
+          <span>多股横向对比</span>
+        </button>
+        <button type="button" class="global-nav-tab" data-view="backtestSection">
+          <span class="tab-icon">📈</span>
+          <span>量化动量实验</span>
+        </button>
+        <button type="button" class="global-nav-tab" data-view="portfolioSection">
+          <span class="tab-icon">💼</span>
+          <span>组合风控配置</span>
+        </button>
+      </nav>
+
+      <!-- 顶栏快速搜索入口 (Rule 2: 搜索放在顶栏，回车仍进档案) -->
+      <div class="nav-search-section">
+        <form id="topNavSearchForm" class="nav-search-form" autocomplete="off">
+          <span class="nav-search-icon">🔍</span>
+          <input
+            type="text"
+            id="topNavSymbolInput"
+            class="nav-search-input"
+            placeholder="搜索美股 (如 NVDA, AAPL) 回车看档案..."
+          />
+          <div id="topNavAutocompleteDropdown" class="autocomplete-dropdown top-nav-dropdown" style="display:none;"></div>
+        </form>
+      </div>
+
+      <div class="nav-right-actions">
+        <button type="button" id="btnGlobalHistory" class="btn-ghost" title="查看所有已归档的股票研究档案">
+          <span class="icon">📚</span>
+          <span>档案书架</span>
+          <span id="globalHistoryBadge" class="badge-count">0</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 全局能力与数据透明对齐横幅 (Rule 1 & P0 5) -->
+    <div class="global-capability-banner" id="globalCapabilityBanner">
+      <div class="banner-inner">
+        <span class="banner-icon">🛡️</span>
+        <span class="banner-text">行情与单期财报来自长桥，产品笔记为人工整理，分数是规则分，未经历史胜率验证。</span>
+      </div>
+    </div>
+
+    <!-- 1. 个股深度档案主区域 (Dossier Section - 默认隐藏，由搜索或点击进入) -->
+    <div id="dossierSection" class="workbench-section" style="display: none;">
+      <!-- 首页视图 (Google 极简搜索风) -->
+      <div id="homeView" class="view-container active">
+      <header class="home-topbar">
+        <div class="brand-badge">
+          <span class="live-dot"></span>
+          <span id="systemDataStreamStatus">长桥行情网关 / Yahoo 备用流 · 多因子量化引擎</span>
+        </div>
+        <div class="home-topbar-actions">
+          <button type="button" id="btnOpenHistory" class="btn-ghost" title="查看所有已归档的股票研究档案">
+            <span class="icon">🕒</span>
+            <span>历史查询记录</span>
+            <span id="historyCountBadge" class="badge-count">0</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="home-hero">
+        <div class="hero-logo-box">
+          <div class="hero-icon-gradient">📈</div>
+          <h1 class="hero-title">AI 深度投研档案终端</h1>
+          <p class="hero-subtitle">Institutional Long-Term Equity Dossier & Valuation Terminal</p>
         </div>
 
-        <nav class="side-nav">
-          <a href="#macroCockpit" class="active">☀️ 宏观天气与日历</a>
-          <a href="#dailyPicksSection">🏆 今日推荐 (Step 2.5漏斗)</a>
-          <a href="#portfolioSection">🛡️ 组合仓位与对冲 (Step 5.5)</a>
-          <a href="#backtestSection">📈 策略实证回测与Alpha归因</a>
-          <a href="#techCatalystsSection">📱 科技另类数据 (Capex核验)</a>
-          <a href="#stock360Section">🔍 单股 360 深度研判</a>
-          <a href="#scoreExplain">📊 因子拆解与排雷</a>
-          <a href="#relations">🌐 关联网络与同业</a>
-          <a href="#governance">🏛️ 治理与做空筹码</a>
-          <a href="#compare">⚖️ 多股横向对比</a>
-          <a href="#reviewArchiveSection">📓 复盘与决策归档</a>
-        </nav>
-
-        <div class="status-card" id="statusCard">
-          <span class="pulse"></span>
-          <div>
-            <strong id="modelStatusTitle">本地 CLI 智囊矩阵</strong>
-            <p id="modelStatusDesc">长桥数据 · Grok CLI · Gemini CLI</p>
-          </div>
-        </div>
-
-        <div class="sidebar-note">
-          <b>买方风控守则</b>
-          <span>“选股先看天气，覆巢之下无完卵”。严格遵循硬规则排雷 + 确定性止损防线，杜绝无依据盲从。</span>
-        </div>
-      </aside>
-
-      <!-- 主工作台 -->
-      <main class="workbench">
-        <!-- 顶栏指挥台 -->
-        <header class="topbar">
-          <div class="topbar-title">
-            <p>INSTITUTIONAL EQUITY INTELLIGENCE TERMINAL</p>
-            <h1>美股量化与大模型投研工作台</h1>
-          </div>
-
-          <div class="topbar-status">
-            <span id="lbStatusPill" class="status-pill">长桥：检测中</span>
-            <span id="grokStatusPill" class="status-pill">⚡ Grok：就绪</span>
-            <span id="geminiStatusPill" class="status-pill">🧠 Gemini：就绪</span>
-            <span id="localClock" class="clock">--:--:--</span>
-          </div>
-
-          <!-- 统一指令搜索栏 -->
-          <form id="analyzeForm" class="command-bar">
-            <label class="symbol-field" for="symbolInput">
-              <span>标的代码</span>
-              <input id="symbolInput" name="symbol" value="NVDA.US" placeholder="输入代码如 NVDA.US / META.US / TSLA.US" />
-            </label>
-            <label class="model-select-field">
-              <span>研判引擎</span>
-              <select id="modelSelector">
-                <option value="gemini" selected>🧠 Gemini CLI (深度财务长文推演)</option>
-                <option value="grok">⚡ Grok CLI (市场舆情与产品催化敏锐)</option>
-                <option value="cross">🤝 双模型交叉互审 (Grok催化 + Gemini财务)</option>
-              </select>
-            </label>
-            <button type="submit" id="btnRunDeepAnalyze" class="primary-button">🚀 启动全景深度研判</button>
+        <div class="search-box-container" id="searchBoxContainer">
+          <form id="searchForm" class="search-form" autocomplete="off">
+            <div class="search-input-wrapper" id="searchInputWrapper">
+              <span class="search-icon">🔍</span>
+              <input
+                type="text"
+                id="symbolInput"
+                class="search-input"
+                placeholder="输入美股英文代码，如 NVDA、AAPL、MU、TSLA..."
+                autofocus
+                required
+              />
+              <button type="button" id="btnClearSearch" class="btn-clear" style="display:none;" title="清空">✕</button>
+              <button type="submit" id="btnSubmitSearch" class="btn-primary btn-search">
+                <span>深度调阅</span>
+                <kbd>↵</kbd>
+              </button>
+            </div>
           </form>
-        </header>
+          <!-- 联想词智能浮动面板 -->
+          <div id="autocompleteDropdown" class="autocomplete-dropdown" style="display:none;"></div>
+        </div>
 
-        <!-- 热门快捷代码条 -->
-        <section class="quick-actions">
-          <div class="examples" aria-label="核心科技与蓝筹">
-            <button type="button" data-symbol="NVDA.US">NVDA (英伟达)</button>
-            <button type="button" data-symbol="META.US">META (Meta)</button>
-            <button type="button" data-symbol="GOOGL.US">GOOGL (谷歌)</button>
-            <button type="button" data-symbol="MU.US">MU (美光)</button>
-            <button type="button" data-symbol="TSLA.US">TSLA (特斯拉)</button>
-            <button type="button" data-symbol="AAPL.US">AAPL (苹果)</button>
-            <button type="button" data-symbol="MSFT.US">MSFT (微软)</button>
-            <button type="button" data-symbol="QQQ.US">QQQ (纳指100)</button>
+        <!-- 热门标的快速入口 -->
+        <div class="quick-picks-section">
+          <span class="quick-picks-label">热门研究标的：</span>
+          <div class="quick-picks-pills" id="quickPills">
+            <button type="button" class="pill-btn" data-symbol="NVDA.US">NVDA.US (英伟达)</button>
+            <button type="button" class="pill-btn" data-symbol="MU.US">MU.US (美光科技)</button>
+            <button type="button" class="pill-btn" data-symbol="AAPL.US">AAPL.US (苹果)</button>
+            <button type="button" class="pill-btn" data-symbol="MSFT.US">MSFT.US (微软)</button>
+            <button type="button" class="pill-btn" data-symbol="TSLA.US">TSLA.US (特斯拉)</button>
+            <button type="button" class="pill-btn" data-symbol="GOOGL.US">GOOGL.US (谷歌)</button>
+            <button type="button" class="pill-btn" data-symbol="AMZN.US">AMZN.US (亚马逊)</button>
+            <button type="button" class="pill-btn" data-symbol="ASML.US">ASML.US (阿斯麦)</button>
+            <button type="button" class="pill-btn" data-symbol="PLTR.US">PLTR.US (Palantir)</button>
           </div>
-          <div class="workflow-strip">
-            <span>1. 宏观VIX定攻防姿态</span>
-            <span>2. 每日大池轻量初筛</span>
-            <span>3. 科技产品/AppStore领先指标</span>
-            <span>4. Grok/Gemini 结构化决策备忘录</span>
+        </div>
+
+        <!-- 首页买方价值特性卡片 -->
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🏢</div>
+            <h3>商业本质与行业天梯</h3>
+            <p>穿透“靠卖什么赚钱”，拆解 TAM 空间与主要竞对威胁，告别泛泛简介。</p>
           </div>
-        </section>
-
-        <!-- 全局消息与加载指示 -->
-        <section id="errorBox" class="error hidden"></section>
-        <section id="loading" class="loading hidden">
-          <div class="loader"></div>
-          <p id="loadingText">正在并发调度本地 CLI 引擎、行情量化模型与前瞻催化清单...</p>
-        </section>
-
-        <!-- 模块一：宏观天气与波动率中枢 (Macro & VIX Weather Cockpit) -->
-        <section class="workspace-section" id="macroCockpit">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Macro Regime & Volatility Climate</p>
-              <h2>第一层：宏观天气中枢与大事件双向时间轴</h2>
-            </div>
-            <p class="section-help">选股前先看大盘趋势与 VIX 恐慌温度，决定总体仓位水准与攻防姿态。</p>
+          <div class="feature-card">
+            <div class="feature-icon">📦</div>
+            <h3>核心产品与技术解构</h3>
+            <p>券商软件没有的独家功能：软硬件分类、技术护城河、市占率与未来 1-3 年催化剂。</p>
           </div>
-
-          <!-- 宏观四卡合一面板 -->
-          <div class="macro-weather-grid">
-            <div class="weather-card index-card">
-              <div class="weather-card-head">
-                <span>标普 500 基准 (SPY)</span>
-                <span class="trend-badge" id="spyTrendBadge">均线上方多头</span>
-              </div>
-              <div class="weather-card-body">
-                <strong id="spyPrice">$572.48</strong>
-                <span id="spyChange" class="badge-success">+0.42% ▲</span>
-              </div>
-              <small id="spyNote">大盘主要指数稳居 20日/60日 均线上方</small>
-            </div>
-
-            <div class="weather-card index-card">
-              <div class="weather-card-head">
-                <span>纳斯达克 100 基准 (QQQ)</span>
-                <span class="trend-badge" id="qqqTrendBadge">科技成长顺风</span>
-              </div>
-              <div class="weather-card-body">
-                <strong id="qqqPrice">$489.15</strong>
-                <span id="qqqChange" class="badge-success">+0.65% ▲</span>
-              </div>
-              <small id="qqqNote">科技龙头流动性充沛，风险偏好旺盛</small>
-            </div>
-
-            <div class="weather-card vix-card">
-              <div class="weather-card-head">
-                <span>CBOE 恐慌波动率 (.VIX)</span>
-                <span class="vix-level-badge" id="vixLevelBadge">极度平静</span>
-              </div>
-              <div class="weather-card-body">
-                <strong id="vixValue">15.42</strong>
-                <span id="vixChange" class="badge-success">-3.85% ▼</span>
-              </div>
-              <small id="vixNote">VIX &lt; 16 处于低波动区间，市场宽容度高</small>
-            </div>
-
-            <div class="weather-card strategy-card">
-              <div class="weather-card-head">
-                <span>今日市场宏观定性</span>
-                <b id="macroRegimeTag" class="tag-pill">☀️ 顺风进攻期</b>
-              </div>
-              <div class="strategy-detail">
-                <div><span>建议基准仓位:</span> <strong id="macroExposure">75% - 90%</strong></div>
-                <div><span>今日选股偏好:</span> <b id="macroStyle">主攻高动量突破、强催化与爆款应用标的</b></div>
-              </div>
-              <p id="macroDesc" class="macro-desc">全市场流动性充沛，未现系统性抛压，适合以强势进攻龙头为主，顺风做多。</p>
-            </div>
+          <div class="feature-card">
+            <div class="feature-icon">💰</div>
+            <h3>同业相对估值与倍数雷达</h3>
+            <p>长桥官方 PE / PS / PB 实数矩阵、同业中位数对比与行业梯队排位，拒绝无来源反推。</p>
           </div>
-
-          <!-- 离散宏观状态机因子权重映射看板 (Step 7 防过拟合) -->
-          <div class="panel regime-matrix-panel" id="regimeMatrixPanel">
-            <div class="panel-head">
-              <span>🌪️ 宏观离散状态机与因子权重矩阵 (Step 7 根治自进化过拟合)</span>
-              <b id="activeRegimeMatrixName" class="badge-success">顺风进攻矩阵 (Risk-On Growth)</b>
-            </div>
-            <div class="regime-matrix-body">
-              <div class="regime-factor-bars" id="regimeFactorBars">
-                <!-- 动态填充因子权重条 -->
-              </div>
-              <div class="anti-overfitting-box">
-                <span class="shield-icon">🛡️</span>
-                <div>
-                  <strong>买方量化铁律：离散状态机阻断“追逐风格过拟合 (Regime Chasing)”</strong>
-                  <p id="antiChasingNote">严禁根据短周期收益线性高频调权。在顺风/中性/防御/恐慌等离散状态间切换，锁定防守与进攻风格，绝不在风格切换点被两头抽耳光。</p>
-                </div>
-              </div>
-            </div>
+          <div class="feature-card">
+            <div class="feature-icon">🧭</div>
+            <h3>大白话指标教学罗盘</h3>
+            <p>鼠标悬浮即可看懂指标意义、好坏评判标准、当前诊断结论与中长线操作场景。</p>
           </div>
-
-          <!-- 双向 30 天大事件时间轴 -->
-          <div class="timeline-container panel">
-            <div class="panel-head">
-              <span>📅 重大事件时间轴：回顾过去 30 天 ➔ 前瞻未来 30 天</span>
-              <b>排雷防震 · 催化倒计时</b>
-            </div>
-            <div class="timeline-split">
-              <!-- 过去 30 天复盘 -->
-              <div class="timeline-col">
-                <h4 class="timeline-title">⏪ 过去 30 天关键宏观事件复盘</h4>
-                <div id="pastEventsList" class="event-stream"></div>
-              </div>
-              <!-- 未来 30 天前瞻 -->
-              <div class="timeline-col">
-                <h4 class="timeline-title">⏩ 未来 30 天前瞻重大事件排查 (防踩雷)</h4>
-                <div id="upcomingEventsList" class="event-stream"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 模块二：今日自动推荐股票池 (Daily Screener Top Picks) -->
-        <section class="workspace-section" id="dailyPicksSection">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Funnel Compression: 612 ➔ 185 ➔ 32 ➔ 6 (Compression Ratio: 99.02%)</p>
-              <h2>第二层：Step 2.5 纯数值漏斗硬筛选 ➔ 今日核心推荐池</h2>
-            </div>
-            <p class="section-help">在调用双模型 CLI 深度推演前，执行 RS 强弱、换手流动性与 52 周新高纯数值硬闸门，压制候选池，杜绝 Token 爆炸与并发污染。</p>
-          </div>
-
-          <!-- 核心功能：自主运行、自测算、自优化闭环中枢 (Autonomous Self-Evolution Command Center) -->
-          <div class="panel auto-evolution-panel" id="autoEvolutionPanel">
-            <div class="evolution-header-bar">
-              <div class="evolution-status-info">
-                <span class="pulse-cyan"></span>
-                <div>
-                  <div class="evolution-gen-tag">
-                    <strong id="evoGenerationBadge">🧬 自主进化选股引擎: Gen 3 活跃</strong>
-                    <span id="evoDaemonStatus" class="badge-success">● 每日自闭环巡检运行中</span>
-                  </div>
-                  <p id="evoTuningRationale" class="evolution-rationale">
-                    模型自学习诊断：近期宏观 VIX 平稳且大盘动能显著，系统已自动上调动量与科技催化因子权重至 35%/27%，估值降至 10%。
-                  </p>
-                </div>
-              </div>
-
-              <div class="evolution-actions">
-                <button type="button" id="btnTriggerAutoEvolution" class="primary-button pulse-btn">
-                  ⚡ 立即执行一轮自主演进 (测算历史 ➔ 优化因子 ➔ 输出新标的)
-                </button>
-              </div>
-            </div>
-
-            <!-- 动态自适应因子权重分布条 -->
-            <div class="evolution-weights-container">
-              <div class="weights-header">
-                <span>当前模型动态因子配比 (随大盘风向与历史实测胜率自主微调)</span>
-                <span id="evoLastUpdated" class="sub-muted">模型版本: 实时自优化</span>
-              </div>
-              <div class="evolution-weights-grid" id="evolutionWeightsGrid">
-                <!-- 动态渲染: 动量、催化、质量、估值、流动性 -->
-              </div>
-            </div>
-
-            <!-- 历史测算战绩仪表盘 -->
-            <div class="evolution-scoreboard-grid">
-              <div class="stat-box">
-                <span>已测算历史推荐样本</span>
-                <strong id="evoTotalEval">8 批次</strong>
-              </div>
-              <div class="stat-box">
-                <span>历史推荐胜率 (Alpha &gt; 0)</span>
-                <strong id="evoHitRate" class="badge-success">75.0%</strong>
-              </div>
-              <div class="stat-box">
-                <span>平均跑赢标普 (Alpha)</span>
-                <strong id="evoAvgAlpha" class="badge-info">+5.85%</strong>
-              </div>
-              <div class="stat-box">
-                <span>因果复盘定性分布</span>
-                <small id="evoCausalSummary" class="text-cyan">🎯 逻辑兑现 75% · 🌧️ 大盘拖累 12.5% · ❌ 破位 12.5%</small>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 2.5 纯数值漏斗流水线监控看板 -->
-          <div class="funnel-pipeline-banner panel" id="funnelPipelineBanner">
-            <div class="funnel-step-card">
-              <span class="step-num">Step 2 初始池</span>
-              <strong>612 只</strong>
-              <small>纳指100 ∪ 标普500 ∪ 成交量前100 ∪ 异动</small>
-            </div>
-            <div class="funnel-arrow">➔</div>
-            <div class="funnel-step-card">
-              <span class="step-num">Step 2.1 流动性闸门</span>
-              <strong id="funnelLayer1Passed">185 只</strong>
-              <small>日均成交 ≥ $1.0B 且换手健康 (汰除 427 只)</small>
-            </div>
-            <div class="funnel-arrow">➔</div>
-            <div class="funnel-step-card highlight">
-              <span class="step-num">Step 2.5 数值硬规则</span>
-              <strong id="funnelLayer2Passed">32 只</strong>
-              <small>RS 相对强弱 ≥ 前20% 且 距52周新高 ≤ -25%</small>
-            </div>
-            <div class="funnel-arrow">➔</div>
-            <div class="funnel-step-card final">
-              <span class="step-num">Step 5 双模型研判池</span>
-              <strong id="funnelLayer3Passed">6 只核心标的</strong>
-              <small class="text-success">节省 91.8% Token · 严防上下文污染</small>
-            </div>
-          </div>
-
-          <!-- 推荐卡片列表网格 -->
-          <div id="dailyPicksGrid" class="daily-picks-grid"></div>
-        </section>
-
-        <!-- 模块：Step 5.5 机构级组合与仓位管理 (Portfolio Allocation & Risk Parity) -->
-        <section class="workspace-section" id="portfolioSection">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Step 5.5 Institutional Portfolio Construction &amp; Derivatives Hedge</p>
-              <h2>第五层：组合管理与波动率平价仓位算法 (行业限额 30% · 2xATR 止损 · 期权对冲)</h2>
-            </div>
-            <p class="section-help">不仅要选出好股票，更要控制行业相关性与下行敞口。单一行业上限不超过 30%，依 ATR(14) 确定头寸，配置保护性 Put 或备兑 Call。</p>
-          </div>
-
-          <!-- 仓位模拟与风控参数设置栏 -->
-          <div class="panel portfolio-control-panel">
-            <div class="portfolio-inputs-grid">
-              <label>
-                <span>组合总资金 (USD)</span>
-                <input id="portfolioTotalCapital" type="number" value="100000" step="5000" min="10000" />
-              </label>
-              <label>
-                <span>单笔最大风险容忍 (Risk Per Trade)</span>
-                <select id="portfolioRiskPct">
-                  <option value="1.0">1.0% (保守防守 - 每笔最多亏 $1,000)</option>
-                  <option value="1.5" selected>1.5% (机构标准 - 每笔最多亏 $1,500)</option>
-                  <option value="2.0">2.0% (进取进攻 - 每笔最多亏 $2,000)</option>
-                </select>
-              </label>
-              <label>
-                <span>单一行业暴露敞口硬上限</span>
-                <select id="portfolioSectorCap">
-                  <option value="25.0">25.0% (严格分散)</option>
-                  <option value="30.0" selected>30.0% (机构标准硬约束)</option>
-                  <option value="35.0">35.0% (集中进攻)</option>
-                </select>
-              </label>
-              <button type="button" id="btnRecalculatePortfolio" class="primary-button">⚡ 实时重算仓位与期权</button>
-            </div>
-
-            <!-- 组合宏观指标卡 -->
-            <div class="portfolio-metrics-summary" id="portfolioMetricsSummary">
-              <div class="stat-box"><span>计划建仓资金</span><strong id="portInvested">$81,420.00</strong></div>
-              <div class="stat-box"><span>宏观现金防守储备</span><strong id="portCash" class="badge-success">$18,580.00 (18.6%)</strong></div>
-              <div class="stat-box"><span>组合最大尾部下行风险</span><strong id="portMaxRisk" class="badge-info">8.25%</strong></div>
-              <div class="stat-box"><span>行业集中度合规状态</span><strong id="portSectorStatus" class="badge-success">已受行业 30% 上限约束</strong></div>
-            </div>
-
-            <!-- 行业敞口与仓位分配明细 -->
-            <div class="two-column-grid" style="margin-top:16px;">
-              <!-- 行业敞口进度条 -->
-              <div class="panel sub-panel">
-                <div class="panel-head"><span>各 GICS 行业总配置敞口</span><b>硬上限 ≤ 30%</b></div>
-                <div id="portfolioSectorBars" class="sector-bars-wrap"></div>
-              </div>
-              <!-- 衍生品对冲概览 -->
-              <div class="panel sub-panel">
-                <div class="panel-head"><span>现货与衍生品联动对冲原理</span><b>Protective Put / Covered Call</b></div>
-                <div class="hedge-principle-card">
-                  <div><strong>🛡️ 高 Beta 核心股 (NVDA / TSLA / META)</strong>: 匹配买入 6% OTM 保护性看跌期权 (Protective Put)，封顶下行尾部风险。</div>
-                  <div style="margin-top:8px;"><strong>📈 现金流稳健白马 (AAPL / GOOGL)</strong>: 匹配卖出 8% OTM 备兑看涨期权 (Covered Call)，单月增厚 1.5%~2.2% 确定性权利金。</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 详细持仓测算表格 -->
-            <div class="panel-table-wrap" style="margin-top:16px;">
-              <div id="portfolioAllocationsTable" class="portfolio-table"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 模块：策略实证回测与 Alpha 归因检验 (Empirical Backtesting & Alpha Attribution) -->
-        <section class="workspace-section" id="backtestSection">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Empirical Quantitative Backtesting &amp; Alpha Attribution (2024 - 2026)</p>
-              <h2>第六层：策略实证回测与 Alpha 归因检验 (滑动窗口 · 迟滞防抖 · 动态 ATR 止盈止损)</h2>
-            </div>
-            <p class="section-help">基于 2 年真实交易日行情实证检验，严禁未来函数与幸存者偏差。动态对比标普500 (SPY)，测算超额 Alpha、夏普比率、卡玛比率与最大回撤韧性。</p>
-          </div>
-
-          <!-- 回测参数控制台 -->
-          <div class="panel backtest-control-panel">
-            <div class="backtest-inputs-grid">
-              <label>
-                <span>回测时间跨度</span>
-                <select id="btRange">
-                  <option value="1y">1 年 (近期波动轮动)</option>
-                  <option value="2y" selected>2 年 (2024~2026 完整大周期 - 推荐)</option>
-                  <option value="5y">5 年 (长周期压力测试)</option>
-                </select>
-              </label>
-              <label>
-                <span>调仓轮动频率</span>
-                <select id="btFreq">
-                  <option value="5" selected>5 交易日 (每周轮动 · 强动能捕捉 - 推荐)</option>
-                  <option value="10">10 交易日 (双周微调)</option>
-                  <option value="15">15 交易日 (三周轮动)</option>
-                  <option value="20">20 交易日 (月度配置)</option>
-                </select>
-              </label>
-              <label>
-                <span>持仓标的数量</span>
-                <select id="btTopN">
-                  <option value="2" selected>Top 2 (集中进攻 · 龙头增益 - 推荐)</option>
-                  <option value="3">Top 3 (均衡配置 · 行业分散)</option>
-                  <option value="5">Top 5 (高分散稳健防守)</option>
-                </select>
-              </label>
-              <label>
-                <span>动态 ATR 止损倍数</span>
-                <select id="btAtr">
-                  <option value="2.0">2.0x ATR (紧密跟踪 · 敏捷防守)</option>
-                  <option value="2.5">2.5x ATR (标准动态跟踪)</option>
-                  <option value="3.0" selected>3.0x ATR (宽幅抗噪 · 骑稳主升浪 - 推荐)</option>
-                </select>
-              </label>
-              <button type="button" id="btnRunBacktest" class="primary-button">⚡ 运行量化实证回测</button>
-            </div>
-
-            <!-- 核心 KPI 汇总矩阵 -->
-            <div class="portfolio-metrics-summary backtest-metrics-grid" id="backtestMetricsSummary" style="margin-top:16px;">
-              <div class="stat-box">
-                <span>策略累计收益率</span>
-                <div class="kpi-val-group">
-                  <strong id="btStratReturn" class="badge-success">+30.29%</strong>
-                  <span id="btAlphaPill" class="metric-pill pill-cyan">Alpha +2.01%</span>
-                </div>
-              </div>
-              <div class="stat-box">
-                <span>标普500 (SPY) 基准收益</span>
-                <strong id="btSpyReturn" class="badge-amber">+28.28%</strong>
-              </div>
-              <div class="stat-box">
-                <span>年化夏普比率 (Sharpe)</span>
-                <div class="kpi-val-group">
-                  <strong id="btSharpe" class="badge-info">0.61</strong>
-                  <small id="btVol" class="sub-muted">年化波动率 17.8%</small>
-                </div>
-              </div>
-              <div class="stat-box">
-                <span>策略最大回撤 (Max DD)</span>
-                <div class="kpi-val-group">
-                  <strong id="btMaxDd" class="badge-warning">-20.38%</strong>
-                  <small id="btSpyMaxDd" class="sub-muted">SPY 基准回撤 -19.00%</small>
-                </div>
-              </div>
-              <div class="stat-box">
-                <span>交易胜率 (Win Rate)</span>
-                <div class="kpi-val-group">
-                  <strong id="btWinRate" class="badge-success">44.8%</strong>
-                  <small id="btTradesCount" class="sub-muted">共 42 笔交易</small>
-                </div>
-              </div>
-              <div class="stat-box">
-                <span>年化复合收益率 (CAGR)</span>
-                <div class="kpi-val-group">
-                  <strong id="btCagr" class="badge-info">+16.42%</strong>
-                  <small id="btCalmar" class="sub-muted">卡玛比率 0.81</small>
-                </div>
-              </div>
-            </div>
-
-            <!-- 净值走势 SVG 交互图表容器 -->
-            <div class="panel equity-chart-panel" style="margin-top: 16px;">
-              <div class="panel-head">
-                <div class="chart-header-left">
-                  <span>净值走势对比 (Normalized NAV Curve: 初始基线 $100,000)</span>
-                  <div class="chart-legend">
-                    <span class="legend-item"><span class="legend-color legend-cyan"></span> AI 量化选股策略</span>
-                    <span class="legend-item"><span class="legend-color legend-amber"></span> 标普500 ETF (SPY)</span>
-                    <span class="legend-item"><span class="legend-color legend-line"></span> 成本基线</span>
-                  </div>
-                </div>
-                <span id="btPeriodRange" class="badge-subtle">2024-12-24 ~ 2026-09-25 (439 交易日)</span>
-              </div>
-              <div class="chart-wrapper" id="equityChartContainer">
-                <svg id="equityChartSvg" class="equity-svg" viewBox="0 0 900 320" preserveAspectRatio="none"></svg>
-                <div id="chartTooltip" class="chart-tooltip hidden"></div>
-              </div>
-            </div>
-
-            <!-- 四大量化核心引擎归因卡片 -->
-            <div class="four-column-grid" style="margin-top: 16px;">
-              <div class="panel sub-panel quant-rule-card">
-                <div class="rule-icon">🛡️</div>
-                <h4>迟滞防抖缓冲区 (Hysteresis Buffer)</h4>
-                <p>排名前 N 选股建仓，仅当排名大幅跌出 N+2 (例如第5名外) 时才触发调仓抛售，减少 40%+ 无效摩擦，保护主升浪利润。</p>
-              </div>
-              <div class="panel sub-panel quant-rule-card">
-                <div class="rule-icon">🎯</div>
-                <h4>保本与动态 ATR 移动止盈止损</h4>
-                <p>浮盈超 10% 锁定保本防线 (成本+1%滑点垫)；浮盈超 20% 激活动态最高点回撤 $k \times \text{ATR}$ 跟踪止盈，截断暴跌风险。</p>
-              </div>
-              <div class="panel sub-panel quant-rule-card">
-                <div class="rule-icon">🌦️</div>
-                <h4>宏观 VIX 动态风险敞口</h4>
-                <p>VIX &lt; 18 满仓进攻 (95%)，18~23 均衡配置 (75%)，23~28 减半防守 (45%)，&gt;28 强制 15% 极低暴露防恐慌暴跌。</p>
-              </div>
-              <div class="panel sub-panel quant-rule-card">
-                <div class="rule-icon">📈</div>
-                <h4>结构性多头趋势过滤 (MA Trend)</h4>
-                <p>严禁左侧接飞刀，收盘价位于 60 日均线下方 5% 以上一票否决剔除，彻底隔绝空头破位股对净值的拖累。</p>
-              </div>
-            </div>
-
-            <!-- 模块：参数敏感度热力图阵列与最优前沿 (Parameter Sensitivity Heatmap & Optimal Frontier) -->
-            <div class="panel sensitivity-panel" style="margin-top: 16px;">
-              <div class="panel-head">
-                <div class="chart-header-left">
-                  <span>多因子超参数敏感度热力图 (Parameter Sensitivity Matrix &amp; Optimal Frontier)</span>
-                  <span class="sub-muted">横轴：调仓轮动频率 · 纵轴：动态 ATR 止损倍数 (点击任意单元格快速套用并演练)</span>
-                </div>
-                <div class="sensitivity-metric-tabs" id="sensitivityTabs">
-                  <button type="button" class="tab-btn active" data-metric="alpha">超额 Alpha</button>
-                  <button type="button" class="tab-btn" data-metric="sharpe">夏普比率</button>
-                  <button type="button" class="tab-btn" data-metric="strat_return">策略收益率</button>
-                  <button type="button" class="tab-btn" data-metric="max_dd">最大回撤</button>
-                  <button type="button" class="tab-btn" data-metric="win_rate">胜率</button>
-                </div>
-              </div>
-
-              <!-- 热力图表格容器 -->
-              <div class="heatmap-table-wrap">
-                <div id="sensitivityHeatmap" class="sensitivity-heatmap"></div>
-              </div>
-
-              <!-- 最优前沿参数推荐提示栏 -->
-              <div class="optimal-frontier-summary" id="optimalFrontierSummary">
-                <div class="frontier-card frontier-alpha">
-                  <span class="frontier-badge">👑 最优 Alpha 组合</span>
-                  <strong id="frontAlphaCombo">5日轮动 · 3.0x ATR</strong>
-                  <span id="frontAlphaVal" class="badge-success">Alpha +2.01% (收益 +30.29%)</span>
-                </div>
-                <div class="frontier-card frontier-sharpe">
-                  <span class="frontier-badge">🎯 最高夏普组合</span>
-                  <strong id="frontSharpeCombo">5日轮动 · 3.0x ATR</strong>
-                  <span id="frontSharpeVal" class="badge-info">Sharpe 0.61 (波动率 17.8%)</span>
-                </div>
-                <div class="frontier-card frontier-mdd">
-                  <span class="frontier-badge">🛡️ 最低回撤防守组合</span>
-                  <strong id="frontMddCombo">20日轮动 · 2.0x ATR</strong>
-                  <span id="frontMddVal" class="badge-warning">Max DD -17.10% (抗震防守)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 模块三：科技股另类数据与产品预期 (Tech Alternative Data) -->
-        <section class="workspace-section" id="techCatalystsSection">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Alternative Data &amp; Product Expectations</p>
-              <h2>第三层：科技股专项：App Store 榜单异动与旗舰产品前瞻</h2>
-            </div>
-            <p class="section-help">财报滞后 3 个月，而爆款 App 霸榜与旗舰大模型/硬件发布是实时的领先驱动指标。</p>
-          </div>
-
-          <div class="two-column-grid">
-            <!-- App Store 榜单动量雷达 -->
-            <article class="panel">
-              <div class="panel-head">
-                <span>📱 App Store / Google Play 核心应用榜单动量</span>
-                <b>实时 C 端热度</b>
-              </div>
-              <div class="panel-table-wrap">
-                <div id="appStoreRadarTable" class="app-radar-table"></div>
-              </div>
-            </article>
-
-            <!-- 旗舰产品路线图与预期管理 -->
-            <article class="panel">
-              <div class="panel-head">
-                <span>🔮 科技巨头旗舰产品发布路线图 (预期发酵 ➔ 落地测评)</span>
-                <b>催化剂跟踪</b>
-              </div>
-              <div id="flagshipRoadmapList" class="roadmap-list"></div>
-            </article>
-          </div>
-        </section>
-
-        <!-- 模块四：单股 360 深度研判 (Stock 360 & AI 决策备忘录) -->
-        <section class="workspace-section" id="stock360Section">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Stock 360 In-Depth Research</p>
-              <h2>第四层：单股全景与 AI 买方决策备忘录</h2>
-            </div>
-            <div class="header-action-group">
-              <button type="button" id="addWatchBtn" class="ghost-button">⭐ 加入自选</button>
-              <button type="button" id="exportReportBtn" class="ghost-button">📥 导出 Markdown 研报</button>
-            </div>
-          </div>
-
-          <!-- AI 结构化买方决策研判核心卡 (短/中/长/一票否决) -->
-          <div class="ai-memo-hero panel">
-            <div class="ai-memo-header">
-              <div class="ai-title-wrap">
-                <span id="aiActiveModelBadge" class="ai-model-tag">🧠 Gemini CLI 深度研判</span>
-                <h3 id="aiMemoStockTitle">NVDA.US 全景决策备忘录</h3>
-              </div>
-              <div class="ai-memo-actions">
-                <span id="aiGeneratedTime" class="timestamp">刚刚生成</span>
-              </div>
-            </div>
-            <div id="aiMemoContent" class="ai-memo-content">
-              <div class="loading-inline">正在调度大模型生成结构化买方报告...</div>
-            </div>
-          </div>
-
-          <!-- 价格 KPI 与 综合评分网格 -->
-          <div class="overview-grid">
-            <article class="panel quote-panel">
-              <div class="panel-head">
-                <span>行情与流动性快照</span>
-                <b id="tradeStatus">交易中</b>
-              </div>
-              <div class="quote-main">
-                <h2 id="stockSymbol">NVDA.US</h2>
-                <div>
-                  <strong id="lastPrice">$128.45</strong>
-                  <span id="changePct" class="badge-success">+2.85% ▲</span>
-                </div>
-              </div>
-              <div class="metric-grid compact">
-                <div><span>成交量</span><b id="volume">35.6M</b></div>
-                <div><span>成交额</span><b id="turnover">45.8 亿</b></div>
-                <div><span>量能倍率</span><b id="volumeRatio">1.75x (放量)</b></div>
-              </div>
-            </article>
-
-            <article class="panel score-panel">
-              <div class="panel-head">
-                <span>本地多因子量化评分</span>
-                <b id="verdict">值得重点研究</b>
-              </div>
-              <div class="score-layout">
-                <div class="score-ring"><span id="score">88.5</span></div>
-                <div class="score-copy">
-                  <p id="dataQuality">覆盖 260 根日K线 · 机构级财务快照 · 做空持仓与高管全量覆盖</p>
-                  <div class="formula-mini">
-                    <span id="scoreFormula">最终评分 = 基础技术/消息分 × 60% + 全景多因子分 × 40%</span>
-                  </div>
-                </div>
-              </div>
-              <div class="score-kpis">
-                <div><span>价格动量</span><b>85.0</b></div>
-                <div><span>基本面质量</span><b>90.0</b></div>
-                <div><span>催化剂</span><b>92.0</b></div>
-                <div><span>做空惩罚</span><b class="text-danger">-0.0</b></div>
-              </div>
-            </article>
-
-            <article class="panel brief-panel">
-              <div class="panel-head">
-                <span>规则引擎研判结论</span>
-                <b>本地确定性规则</b>
-              </div>
-              <h3 id="briefOneSentence">NVDA.US 依托全球 AI 算力垄断地位，Blackwell 需求爆发，评分 88.5/100，处于健康进攻通道。</h3>
-              <div class="brief-matrix">
-                <div>
-                  <h4>牛市正面证据</h4>
-                  <ul id="briefBull" class="signal-list"></ul>
-                </div>
-                <div>
-                  <h4>熊市风险与防守</h4>
-                  <ul id="briefBear" class="signal-list risk"></ul>
-                </div>
-              </div>
-            </article>
-          </div>
-
-          <div id="dataWarnings" class="warning-strip hidden"></div>
-        </section>
-
-        <!-- 模块五：可解释多因子拆解 (Score Explain) -->
-        <section class="workspace-section" id="scoreExplain">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Factor Explainability</p>
-              <h2>第五层：多因子公式拆解与正负证据链</h2>
-            </div>
-            <p class="section-help">不当黑盒，拒绝盲从。清晰展示价格动量、流动性、基本面、估值和风险惩罚的加权明细。</p>
-          </div>
-
-          <div class="explain-grid">
-            <article class="panel">
-              <div class="panel-head">
-                <span>因子公式加权明细</span>
-                <b id="factorFormula">多因子分 = Σ(正向因子分 × 权重) / Σ正向权重 + 风险惩罚</b>
-              </div>
-              <div id="factorList" class="factor-list"></div>
-            </article>
-
-            <article class="panel">
-              <div class="panel-head">
-                <span>全维度支持与排查清单</span>
-                <b>规则引擎证据</b>
-              </div>
-              <div class="signal-columns">
-                <div>
-                  <h4>支持做多研究证据</h4>
-                  <ul id="positives" class="signal-list"></ul>
-                </div>
-                <div>
-                  <h4>优先排查风险清单</h4>
-                  <ul id="risks" class="signal-list risk"></ul>
-                </div>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <!-- 模块六：技术形态、基本面与估值画像 -->
-        <section class="workspace-section">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Technical &amp; Fundamental Deep Dive</p>
-              <h2>第六层：技术面结构、财务快照与估值位置</h2>
-            </div>
-          </div>
-
-          <div class="three-column-grid">
-            <article class="panel">
-              <div class="panel-head"><span>技术面量价指标</span><b id="trendLabel">20日均线上方震荡上行</b></div>
-              <div class="metric-grid two">
-                <div><span>5日涨跌</span><b id="ret5d">+4.28%</b></div>
-                <div><span>20日涨跌</span><b id="ret20d">+8.40%</b></div>
-                <div><span>60日涨跌</span><b id="ret60d">+21.60%</b></div>
-                <div><span>RSI 14</span><b id="rsi14">58.5 (健康)</b></div>
-                <div><span>20日年化波动率</span><b id="volatility">32.5%</b></div>
-                <div><span>60日最大回撤</span><b id="drawdown">-9.8%</b></div>
-                <div><span>20日MA防线</span><b id="ma20">$123.31</b></div>
-                <div><span>60日MA防线</span><b id="ma60">$116.89</b></div>
-              </div>
-            </article>
-
-            <article class="panel">
-              <div class="panel-head"><span>估值与机构目标价</span><b id="valuationPe">PE: 42.5</b></div>
-              <div class="metric-grid two">
-                <div><span>行业中位数 PE</span><b id="valuationMedian">35.0</b></div>
-                <div><span>机构综合评级</span><b id="ratingRecommend">强力买入</b></div>
-                <div><span>平均目标价</span><b id="ratingTarget">$150.00</b></div>
-                <div><span>目标价隐含空间</span><b id="targetUpside" class="badge-success">+16.8%</b></div>
-                <div><span>行业排名</span><b id="ratingRank">3 / 45</b></div>
-              </div>
-              <p id="valuationSummary" class="note">当前估值溢价受高业绩增速支撑，处于可消化区间。</p>
-            </article>
-
-            <article class="panel company-panel">
-              <div class="panel-head"><span>管理层与公司画像</span><b id="companyMarket">US Equity</b></div>
-              <h3 id="companyName">NVIDIA Corporation</h3>
-              <p id="companyProfile" class="profile">全球领先的加速计算架构平台提供商，主导全球 AI 大模型训练与推理基础设施。</p>
-              <div class="metric-grid two">
-                <div><span>CEO 掌门人</span><b id="companyCeo">黄仁勋 (Jensen Huang)</b></div>
-                <div><span>治理信赖度</span><b class="badge-success">极高 · 创始人主导</b></div>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <!-- 模块七：关联股票与产业链网络 -->
-        <section class="workspace-section" id="relations">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Supply Chain &amp; Peer Network</p>
-              <h2>第七层：产业链传导、同业对比与资金联动</h2>
-            </div>
-            <p class="section-help">分析供应链上下游及同业表现，验证行业景气度并寻找传导机会。</p>
-          </div>
-
-          <div class="two-column-grid">
-            <article class="panel">
-              <div class="panel-head"><span>关联节点网络</span><b>传导强度</b></div>
-              <div id="relationSummary" class="governance-summary"></div>
-              <div id="relationNetworkList" class="relation-list"></div>
-              <details open class="analysis-details">
-                <summary>联动监控触发条件</summary>
-                <ul id="relationWatchList" class="signal-list blue"></ul>
-              </details>
-            </article>
-            <article class="panel">
-              <div class="panel-head"><span>做空筹码与排雷雷达</span><b>空头拥挤度</b></div>
-              <div class="metric-grid two">
-                <div><span>做空比例 (Short Interest)</span><b id="shortRateVal">1.20% (极低风险)</b></div>
-                <div><span>回补天数 (Days to Cover)</span><b id="daysToCoverVal">0.9 天 (无挤空风险)</b></div>
-              </div>
-              <div id="controversyList" class="news-list" style="margin-top:14px;"></div>
-            </article>
-          </div>
-        </section>
-
-        <!-- 模块八：多股横向对比 (Compare) -->
-        <section class="workspace-section tool-section" id="compare">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Multi-Stock Compare</p>
-              <h2>多股横向量化对比矩阵</h2>
-            </div>
-            <p class="section-help">在同赛道或候选股中，快速横向对比谁的综合得分、动量、估值与确定性更优。</p>
-          </div>
-
-          <form id="compareForm" class="tool-form horizontal">
-            <label for="compareSymbols">对比股票池 (逗号分隔)</label>
-            <textarea id="compareSymbols" rows="2">NVDA.US, META.US, GOOGL.US, MU.US, TSLA.US</textarea>
-            <button type="submit" class="primary-button">⚡ 运行横向对比</button>
-          </form>
-
-          <section id="compareLoading" class="loading hidden">
-            <div class="loader"></div>
-            <p>正在计算多股对比矩阵与领头羊指标...</p>
-          </section>
-          <section id="compareError" class="error hidden"></section>
-          <section id="compareResult" class="panel result-panel hidden">
-            <div class="panel-head">
-              <span>横向对比矩阵</span>
-              <b id="compareMeta">-</b>
-            </div>
-            <div id="compareLeaders" class="method-notes"></div>
-            <div id="compareTable" class="compare-table"></div>
-          </section>
-        </section>
-
-        <!-- 模块九：决策快照与复盘自进化看板 (Review & Archive Hub) -->
-        <section class="workspace-section" id="reviewArchiveSection">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Decision Journal &amp; Self-Calibration</p>
-              <h2>第八层：全量决策快照归档与历史胜率复盘</h2>
-            </div>
-            <p class="section-help">所有系统推荐与主动提问全部实时存证归档，自动追踪 T+5 / T+20 表现与超额收益 Alpha，为模型调优提供依据。</p>
-          </div>
-
-          <div class="panel">
-            <div class="panel-head">
-              <span>决策快照档案库 (实时追踪)</span>
-              <button type="button" id="refreshReviewBtn" class="ghost-button">🔄 刷新复盘数据</button>
-            </div>
-            <div class="review-stats-summary" id="reviewStatsSummary">
-              <div class="stat-box"><span>归档决策样本</span><strong id="statTotalCount">6</strong></div>
-              <div class="stat-box"><span>平均超额收益 (Alpha)</span><strong id="statAvgAlpha" class="badge-success">+1.85%</strong></div>
-              <div class="stat-box"><span>触碰止损比例</span><strong id="statStoppedRate" class="badge-success">0.0%</strong></div>
-              <div class="stat-box"><span>模型胜率估计</span><strong id="statWinRate" class="badge-success">83.3%</strong></div>
-            </div>
-            <div class="panel-table-wrap">
-              <div id="reviewSnapshotsTable" class="review-table"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 自选股列表管理 -->
-        <section class="workspace-section" id="watchlist">
-          <div class="section-header">
-            <div>
-              <p class="section-kicker">Watchlist</p>
-              <h2>我的自选股跟踪</h2>
-            </div>
-          </div>
-          <div class="panel">
-            <div class="panel-head">
-              <span>自选股清单</span>
-              <button type="button" id="refreshWatchlistBtn" class="ghost-button">刷新自选</button>
-            </div>
-            <div id="watchlistRows" class="compact-list"></div>
-          </div>
-        </section>
+        </div>
       </main>
     </div>
 
-    <script src="/app.js"></script>
+    <!-- 2. 详情页视图 (单股全景投研工作台) -->
+    <div id="dossierView" class="view-container">
+      <!-- 顶部固定命令头 -->
+      <header class="dossier-header">
+        <div class="dossier-header-left">
+          <button type="button" id="btnBackHome" class="btn-back">
+            <span class="icon">←</span>
+            <span>返回搜索</span>
+          </button>
+          <div class="stock-title-box">
+            <div class="stock-title-row">
+              <h2 id="stockName" class="stock-name">英伟达 NVIDIA Corporation</h2>
+              <span id="stockSymbol" class="stock-symbol-tag">NVDA.US</span>
+            </div>
+            <p id="stockEssenceShort" class="stock-essence-short">正在加载商业本质...</p>
+          </div>
+        </div>
+
+        <div class="dossier-header-center">
+          <div class="price-cockpit">
+            <div class="price-val-box">
+              <span id="stockPrice" class="stock-price">$0.00</span>
+              <span id="stockChangePct" class="stock-change-pill neutral">0.00%</span>
+            </div>
+            <div class="valuation-status-banner">
+              <span class="status-dot"></span>
+              <span id="stockValStatus">估值测算中</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dossier-header-right">
+          <!-- 补上自选股入口 (Rule P1 9) -->
+          <button type="button" id="btnDossierWatchlist" class="btn-ghost" title="加入或移出自选关注池">
+            <span class="icon" id="dossierWatchlistIcon">⭐</span>
+            <span id="dossierWatchlistText">加入自选</span>
+          </button>
+          <button type="button" id="btnSyncPrice" class="btn-sync-price" title="在 0.5 秒内轻量更新最新收盘价与技术指标，不消耗大模型算力">
+            <span class="icon">⚡</span>
+            <span>仅同步今日最新价</span>
+          </button>
+          <button type="button" id="btnHeaderHistory" class="btn-ghost" title="查看所有历史档案">
+            <span class="icon">🕒</span>
+            <span>历史书架</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- 专题卡片导航条 (Rule P1 10: 档案先给数字，默认落在估值与财务) -->
+      <nav class="topic-tabs-bar" id="topicTabsBar">
+        <button type="button" class="topic-tab-btn active" data-module="valuation_matrix">
+          <span class="tab-icon">💰</span>
+          <div class="tab-text">
+            <strong>估值与财务速览</strong>
+            <small>PE/PS/PB · 目标价 · 营收净利 · 止损</small>
+          </div>
+        </button>
+        <button type="button" class="topic-tab-btn" data-module="technical_compass">
+          <span class="tab-icon">🧭</span>
+          <div class="tab-text">
+            <strong>技术指标与日 K</strong>
+            <small>260日K线 · MA20/60 · 2×ATR止损 · 罗盘</small>
+          </div>
+        </button>
+        <button type="button" class="topic-tab-btn" data-module="capital_allocation">
+          <span class="tab-icon">🏛️</span>
+          <div class="tab-text">
+            <strong>资产负债与杜邦分析</strong>
+            <small>杜邦拆解 · 杠杆结构 · 稳健性</small>
+          </div>
+        </button>
+        <button type="button" class="topic-tab-btn" data-module="business_and_industry">
+          <span class="tab-icon">🏢</span>
+          <div class="tab-text">
+            <strong>商业模式笔记</strong>
+            <small>人工整理 · 生意模式 · 行业格局</small>
+          </div>
+        </button>
+        <button type="button" class="topic-tab-btn" data-module="core_products">
+          <span class="tab-icon">📦</span>
+          <div class="tab-text">
+            <strong>产品与技术笔记</strong>
+            <small>人工整理 · 软硬件 · 技术壁垒</small>
+          </div>
+        </button>
+        <button type="button" class="topic-tab-btn" data-module="ai_memo">
+          <span class="tab-icon">🧠</span>
+          <div class="tab-text">
+            <strong>AI 买方投资备忘录</strong>
+            <small>双模型互审 · 推翻条件</small>
+          </div>
+        </button>
+      </nav>
+
+      <!-- 专题详情展示主舞台 -->
+      <section class="topic-stage-container">
+        <!-- 专题操作头部 (带时间戳与独立局部刷新) -->
+        <div class="topic-stage-header">
+          <div class="stage-title-group">
+            <span id="topicIcon" class="stage-icon">🏢</span>
+            <h3 id="topicTitle" class="stage-title">商业模式与行业格局</h3>
+          </div>
+          <div class="stage-actions">
+            <span id="topicTimestamp" class="topic-timestamp">🕒 更新于：刚刚</span>
+            <button type="button" id="btnRefreshModule" class="btn-refresh-module" title="只对此卡片进行局部重新抓取与推演，其他模块不动">
+              <span class="icon">🔄</span>
+              <span>局部刷新本专题</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 专题动态内容注入区 -->
+        <div id="topicContentArea" class="topic-content-area">
+          <!-- 动态模板由 JavaScript 渲染 -->
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 2. 智能多因子选股看板 (Screener Section - 默认首页) -->
+  <div id="screenerSection" class="workbench-section active">
+    <div class="workbench-inner">
+      <!-- 宏观天气与离散状态机驾驶舱 -->
+      <div class="macro-cockpit-card">
+        <div class="macro-cockpit-header">
+          <div class="macro-status-headline">
+            <span class="macro-indicator-dot"></span>
+            <h3>宏观离散状态机 (Macro Regime Cockpit)</h3>
+            <span id="screenerRegimeBadge" class="regime-badge neutral">宏观加载中</span>
+            <span id="macroDataSourceBadge" class="data-source-pill live" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); margin-left: 8px;">来源待确认</span>
+          </div>
+          <div class="macro-quick-stats">
+            <div class="macro-stat-item">
+              <span class="stat-label">标普 500 (SPY)</span>
+              <span id="spyStatVal" class="stat-val">$---.--</span>
+              <span id="spyStatChange" class="stat-pill neutral">--</span>
+            </div>
+            <div class="macro-stat-item">
+              <span class="stat-label">纳指 100 (QQQ)</span>
+              <span id="qqqStatVal" class="stat-val">$---.--</span>
+              <span id="qqqStatChange" class="stat-pill neutral">--</span>
+            </div>
+            <div class="macro-stat-item">
+              <span class="stat-label">恐慌指数 (VIX)</span>
+              <span id="vixStatVal" class="stat-val">--.--</span>
+              <span id="vixStatChange" class="stat-pill neutral">--</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="macro-cockpit-body">
+          <div class="macro-guidance-box">
+            <div class="guidance-row">
+              <span class="guidance-label">建议基准仓位：</span>
+              <strong id="screenerMacroExposure" class="guidance-val">--</strong>
+            </div>
+            <div class="guidance-row">
+              <span class="guidance-label">今日策略基调：</span>
+              <span id="screenerMacroAction" class="guidance-desc">正在读取 SPY、QQQ 与 VIX。</span>
+            </div>
+          </div>
+          <div class="macro-weights-strip">
+            <span class="weights-title">当前激活因子权重 (催化为展示项，不占分)：</span>
+            <div class="factor-weight-pills" id="screenerFactorWeights">等待宏观结果</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 冷启动进度反馈看板 (Rule P1 7) -->
+      <div id="screenerProgressBox" class="screener-progress-card" style="display: none;">
+        <div class="progress-info-row">
+          <div class="progress-info-left">
+            <span class="progress-spinner icon spinning">🔄</span>
+            <span id="screenerProgressText" class="progress-text">正在获取长桥行情与财务数据...</span>
+          </div>
+          <span id="screenerProgressCount" class="progress-count">已完成 0 / 22 只</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="screenerProgressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- 频控与网络异常单独通告栏 (不混进流动性淘汰) -->
+      <div id="screenerExceptionsBox" class="screener-exceptions-banner" style="display: none;">
+        <span class="ex-icon">⚠️</span>
+        <span id="screenerExceptionsText" class="ex-text">部分标的遇到长桥频控限流或抓取失败</span>
+        <button type="button" id="btnRetryExceptions" class="btn-ghost-sm">单独重试异常项</button>
+      </div>
+
+      <!-- 每日量化推荐 Top 6 机会池 -->
+      <div class="section-title-bar">
+        <div class="title-left">
+          <span class="section-icon">⚡</span>
+          <h2>每日多因子量化选股 Top 6</h2>
+          <span class="section-sub">经 MA20 趋势与严格估值财务闸门过滤 · 规则阈值，未做 T+5/T+20 验证</span>
+        </div>
+        <div class="title-actions">
+          <button type="button" id="btnRefreshDailyPicks" class="btn-ghost-sm">
+            <span class="icon">🔄</span>
+            <span>重新计算选股池</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 自选股分组筛选与快速添加 (Rule P1 9) -->
+      <div class="screener-filter-strip">
+        <div class="filter-pills-group">
+          <button type="button" class="filter-pill active" id="btnFilterAllPool" data-filter="all">全部候选池 (<span id="screenerAllCount">22</span>只)</button>
+          <button type="button" class="filter-pill" id="btnFilterWatchlist" data-filter="watchlist">⭐ 我的自选池 (<span id="screenerWatchlistCount">0</span>只)</button>
+        </div>
+        <div class="watchlist-quick-add">
+          <input type="text" id="quickAddWatchlistInput" placeholder="输入代码直接加自选 (如 PLTR.US)..." />
+          <button type="button" id="btnQuickAddWatchlist" class="btn-ghost-sm">+ 加入自选</button>
+        </div>
+      </div>
+
+      <!-- 选股漏斗管道明细 (Rule P2 13: 只保留真有淘汰的层) -->
+      <div class="funnel-pipeline-strip" id="screenerFunnelPipeline">
+        <div class="funnel-stage">
+          <span class="stage-num" id="funnelTotalCount">22 只</span>
+          <span class="stage-name">候选股票池 (22只+自选)</span>
+        </div>
+        <span class="funnel-arrow">➔</span>
+        <div class="funnel-stage">
+          <span class="stage-num" id="funnelTrendPassed">-- 只</span>
+          <span class="stage-name">站上 MA20 动量闸门</span>
+        </div>
+        <span class="funnel-arrow">➔</span>
+        <div class="funnel-stage highlight">
+          <span class="stage-num" id="funnelTopPicks">Top 6</span>
+          <span class="stage-name">综合评分截断席位</span>
+        </div>
+      </div>
+
+      <!-- 6张精选标的卡片网格 -->
+      <div class="daily-picks-grid" id="dailyPicksGrid">
+        <div class="card-loading-placeholder">正在多线程计算多因子评分与风险平价防线...</div>
+      </div>
+
+      <!-- 淘汰原因与接近入选标的明细表 (Rule 2: 打开第一眼是今日名单和淘汰原因) -->
+      <div class="culled-details-card" id="culledDetailsCard">
+        <div class="culled-header" id="btnToggleCulled">
+          <h4>📋 淘汰原因与接近入选标的明细 (<span id="culledCountBadge">0</span>)</h4>
+          <span class="toggle-icon">▼</span>
+        </div>
+        <div class="culled-content" id="culledContent" style="display: block;">
+          <table class="culled-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">对比</th>
+                <th>标的代码</th>
+                <th>最新价</th>
+                <th>20日动量</th>
+                <th>综合评分</th>
+                <th>淘汰/未入选归因</th>
+                <th style="width: 90px;">自选</th>
+              </tr>
+            </thead>
+            <tbody id="culledTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 自定义股票池扫描器 -->
+      <div class="custom-screener-card">
+        <div class="custom-screener-header">
+          <div class="card-title-box">
+            <span class="icon">🎯</span>
+            <h3>自定义股票池深度扫描</h3>
+          </div>
+          <div class="custom-screener-presets">
+            <span class="preset-label">快捷股票池：</span>
+            <button type="button" class="preset-chip" data-symbols="NVDA.US,MSFT.US,AAPL.US,AMZN.US,GOOGL.US,META.US,TSLA.US">科技七雄</button>
+            <button type="button" class="preset-chip" data-symbols="NVDA.US,AMD.US,AVGO.US,QCOM.US,ARM.US,MU.US,TSM.US,ASML.US">AI算力芯片</button>
+            <button type="button" class="preset-chip" data-symbols="COST.US,WMT.US,KO.US,MCD.US,UNP.US,CAT.US,WM.US">蓝筹防御现金牛</button>
+          </div>
+        </div>
+        <form id="customScreenerForm" class="custom-screener-form">
+          <div class="input-with-button">
+            <input type="text" id="customUniverseInput" class="custom-universe-input" placeholder="输入以逗号分隔的代码，如 NVDA.US, AAPL.US, MSFT.US, TSLA.US, BABA.US..." value="NVDA.US, MSFT.US, AAPL.US, AMZN.US, GOOGL.US, META.US, TSLA.US, AMD.US, AVGO.US, COST.US" />
+            <button type="submit" id="btnRunCustomScreener" class="btn-primary">
+              <span>开始扫描排序</span>
+              <kbd>↵</kbd>
+            </button>
+          </div>
+        </form>
+        <div class="custom-screener-results" id="customScreenerResults" style="display: none;">
+          <table class="screener-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>标的代码</th>
+                <th>最新价</th>
+                <th>日涨跌</th>
+                <th>综合评分</th>
+                <th>评级结论</th>
+                <th>所属行业</th>
+                <th>20日动量</th>
+                <th>量能比</th>
+                <th>2xATR硬防线</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="customScreenerTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 多股横向对比 (Compare Section) -->
+  <div id="compareSection" class="workbench-section" style="display: none;">
+    <div class="workbench-inner">
+      <div class="section-title-bar">
+        <div class="title-left">
+          <span class="section-icon">⚖️</span>
+          <h2>多股横向对比与竞争雷达</h2>
+          <span class="section-sub">支持 2~5 只标的在评分、动量、估值、评级与风险防线上的同屏并排对比</span>
+        </div>
+      </div>
+
+      <div class="compare-control-card">
+        <div class="compare-input-row">
+          <div class="compare-input-box">
+            <label for="compareSymbolsInput">对比股票池 (2~5 只代码，英文逗号分隔)：</label>
+            <input type="text" id="compareSymbolsInput" class="compare-input" placeholder="如 NVDA.US, AMD.US, AVGO.US" value="NVDA.US, AMD.US, AVGO.US" />
+          </div>
+          <button type="button" id="btnRunCompare" class="btn-primary btn-compare">
+            <span>立即横向对比</span>
+          </button>
+        </div>
+        <div class="compare-presets-strip">
+          <span class="preset-label">对决对标预设：</span>
+          <button type="button" class="preset-chip" data-compare="NVDA.US,AMD.US,AVGO.US">⚡ AI 算力芯片对决 (NVDA vs AMD vs AVGO)</button>
+          <button type="button" class="preset-chip" data-compare="MSFT.US,GOOGL.US,AMZN.US">☁️ 云计算三巨头 (MSFT vs GOOGL vs AMZN)</button>
+          <button type="button" class="preset-chip" data-compare="TSM.US,ASML.US,LRCX.US">🏭 晶圆代工与设备 (TSMC vs ASML vs Lam)</button>
+          <button type="button" class="preset-chip" data-compare="COST.US,WMT.US,TGT.US">🛒 会员仓储与大众零售 (Costco vs Walmart vs Target)</button>
+        </div>
+      </div>
+
+      <!-- 胜出者 KPI 浮动卡片 -->
+      <div class="compare-leaders-grid" id="compareLeadersGrid">
+        <div class="leader-card">
+          <span class="leader-kpi-title">🏆 综合评分榜首</span>
+          <strong id="leaderScoreSym">--</strong>
+          <span id="leaderScoreVal" class="leader-val">-- 分</span>
+        </div>
+        <div class="leader-card">
+          <span class="leader-kpi-title">🚀 20日动量领头羊</span>
+          <strong id="leaderMomentumSym">--</strong>
+          <span id="leaderMomentumVal" class="leader-val">--%</span>
+        </div>
+        <div class="leader-card">
+          <span class="leader-kpi-title">💰 估值性价比最优</span>
+          <strong id="leaderValuationSym">--</strong>
+          <span id="leaderValuationVal" class="leader-val">PE --x</span>
+        </div>
+        <div class="leader-card">
+          <span class="leader-kpi-title">🌊 成交活跃度最高</span>
+          <strong id="leaderTurnoverSym">--</strong>
+          <span id="leaderTurnoverVal" class="leader-val">$-- 亿</span>
+        </div>
+      </div>
+
+      <!-- 对比全景表格 -->
+      <div class="compare-table-container">
+        <table class="compare-table" id="compareTable">
+          <thead>
+            <tr id="compareTableHeadRow">
+              <th>维度 / 指标</th>
+            </tr>
+          </thead>
+          <tbody id="compareTableBody">
+            <tr><td colspan="6" class="text-center text-muted">点击上方“立即横向对比”载入数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 量化回测与归因 (Backtest Section) -->
+  <div id="backtestSection" class="workbench-section" style="display: none;">
+    <div class="workbench-inner">
+      <div class="section-title-bar">
+        <div class="title-left">
+          <span class="section-icon">📈</span>
+          <h2>量化动量实验 · 趋势与 ATR 跟踪止损回测</h2>
+          <span class="section-sub">⚠️ 独立动量实验：基于日 K 线验证相对强弱与 ATR 止损，未纳入财报质量、估值中位数与催化分，不得作为每日多因子胜率依据</span>
+        </div>
+      </div>
+
+      <!-- 回测模型说明与免责警示 (Rule 3 & P2 14) -->
+      <div id="btDisclaimerBox" class="backtest-disclaimer-alert" style="margin: 0.75rem 0 1rem 0; padding: 0.75rem 1.1rem; background: rgba(239, 68, 68, 0.08); border-left: 3px solid #ef4444; border-radius: 4px; font-size: 0.82rem; color: #cbd5e1; line-height: 1.6;">
+        <span style="color: #f87171; font-weight: 700;">【量化动量实验声明 · 不验证每日多因子推荐】</span>
+        <span id="btDisclaimerText">本回测为纯动量与 2×ATR 跟踪止损实验，基于日 K 线时序动量重放。由于开源与长桥历史数据无法取得当时时点（Point-in-Time）的真实财报与行业 PE 估值中位数，因此未纳入财务质量分、估值分与催化分，不得作为页面上每日多因子推荐胜率的证明依据。</span>
+      </div>
+
+      <div class="backtest-control-panel">
+        <div class="backtest-inputs-grid">
+          <label>
+            <span>回测历史区间</span>
+            <select id="btRangeSelect">
+              <option value="1y">近 1 年 (1Y Replay)</option>
+              <option value="2y" selected>近 2 年 (2Y Full Cycle)</option>
+            </select>
+          </label>
+          <label>
+            <span>调仓频率</span>
+            <select id="btFreqSelect">
+              <option value="5">每 5 个交易日 (高频微调)</option>
+              <option value="10">每 10 个交易日 (双周调仓)</option>
+              <option value="15" selected>每 15 个交易日 (三周经典)</option>
+              <option value="20">每 20 个交易日 (月度调仓)</option>
+            </select>
+          </label>
+          <label>
+            <span>持仓标的数 (Top N)</span>
+            <select id="btTopNSelect">
+              <option value="1">Top 1 (极度集中)</option>
+              <option value="2">Top 2 (双核心)</option>
+              <option value="3" selected>Top 3 (经典三叉戟)</option>
+              <option value="5">Top 5 (宽基分散)</option>
+            </select>
+          </label>
+          <label>
+            <span>跟踪止损 (ATR 倍数)</span>
+            <select id="btAtrSelect">
+              <option value="2.0">2.0× ATR (紧密防守)</option>
+              <option value="2.5" selected>2.5× ATR (标准回踩)</option>
+              <option value="3.0">3.0× ATR (宽幅容忍)</option>
+            </select>
+          </label>
+          <button type="button" id="btnRunBacktest" class="btn-primary btn-run-bt">
+            <span>运行量化仿真</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 核心绩效 KPI 指标面板 -->
+      <div class="backtest-metrics-grid">
+        <div class="bt-metric-card">
+          <span class="bt-metric-label">策略总收益率</span>
+          <strong id="btStrategyRet" class="bt-metric-val positive">+0.0%</strong>
+          <small id="btStrategyCagr">CAGR: +0.0%</small>
+        </div>
+        <div class="bt-metric-card">
+          <span class="bt-metric-label">标普 500 基准 (SPY)</span>
+          <strong id="btBenchmarkRet" class="bt-metric-val neutral">+0.0%</strong>
+          <small id="btBenchmarkCagr">CAGR: +0.0%</small>
+        </div>
+        <div class="bt-metric-card highlight">
+          <span class="bt-metric-label">超额阿尔法 (Alpha)</span>
+          <strong id="btAlpha" class="bt-metric-val positive">+0.0%</strong>
+          <small>跑赢大盘超额收益</small>
+        </div>
+        <div class="bt-metric-card">
+          <span class="bt-metric-label">年化夏普比率 (Sharpe)</span>
+          <strong id="btSharpe" class="bt-metric-val">0.00</strong>
+          <small id="btSharpeDesc">风险调整收益</small>
+        </div>
+        <div class="bt-metric-card">
+          <span class="bt-metric-label">最大历史回撤 (MDD)</span>
+          <strong id="btMaxDd" class="bt-metric-val negative">-0.0%</strong>
+          <small id="btBenchDd">基准回撤: -0.0%</small>
+        </div>
+        <div class="bt-metric-card">
+          <span class="bt-metric-label">调仓周期胜率 (Win Rate)</span>
+          <strong id="btWinRate" class="bt-metric-val">0.0%</strong>
+          <small id="btTotalTrades">总调仓: 0 次</small>
+        </div>
+      </div>
+
+      <!-- 交互式 SVG 净值曲线图 -->
+      <div class="equity-chart-card">
+        <div class="equity-chart-header">
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-color strategy"></span> 策略净值走势</span>
+            <span class="legend-item"><span class="legend-color benchmark"></span> 标普 500 (SPY) 基准</span>
+          </div>
+          <div class="chart-stats-pill" id="chartRangePill">2年历史滑动推演</div>
+        </div>
+        <div class="equity-chart-canvas-wrapper" id="equityChartWrapper">
+          <svg id="equityChartSvg" class="equity-chart-svg" viewBox="0 0 900 360" preserveAspectRatio="none">
+            <!-- SVG 动态净值曲线由 JS 绘制 -->
+          </svg>
+          <div id="chartTooltip" class="chart-hover-tooltip" style="display: none;"></div>
+        </div>
+      </div>
+
+      <!-- 超参数敏感度热力图矩阵 -->
+      <div class="sensitivity-panel">
+        <div class="sensitivity-header">
+          <div class="title-box">
+            <span class="icon">🧬</span>
+            <h3>超参数敏感度热力图 (Optimal Frontier Matrix)</h3>
+          </div>
+          <div class="sensitivity-metric-tabs" id="sensitivityMetricTabs">
+            <button type="button" class="tab-btn active" data-metric="sharpe">夏普比率 (Sharpe)</button>
+            <button type="button" class="tab-btn" data-metric="total_return">累计收益率 (%)</button>
+            <button type="button" class="tab-btn" data-metric="max_drawdown">最大回撤 (%)</button>
+          </div>
+        </div>
+        <p class="sensitivity-desc">网格遍历不同调仓周期与持仓集中度，高亮最具鲁棒性的最优参数前沿，严防过拟合“参数孤岛”。</p>
+        <div class="heatmap-table-wrap">
+          <table class="sensitivity-grid-table" id="sensitivityGridTable">
+            <tbody id="sensitivityTableBody">
+              <tr><td class="text-center text-muted">点击上方“运行量化仿真”加载敏感度矩阵</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 组合风控配置 (Portfolio Section) -->
+  <div id="portfolioSection" class="workbench-section" style="display: none;">
+    <div class="workbench-inner">
+      <div class="section-title-bar">
+        <div class="title-left">
+          <span class="section-icon">💼</span>
+          <h2>组合风控配置与风险平价测算</h2>
+          <span class="section-sub">⚠️ 组合资金测算器：基于历史静态 Beta、ATR(14) 波动与宏观目标仓位试算分配，非实盘下单指令</span>
+        </div>
+      </div>
+
+      <div class="portfolio-controls-card">
+        <div class="portfolio-inputs-grid">
+          <label>
+            <span>投资账户总资金 ($)</span>
+            <input type="number" id="portTotalCapital" value="100000" step="5000" min="10000" />
+          </label>
+          <label>
+            <span>单笔交易风险预算 (%)</span>
+            <input type="number" id="portRiskPct" value="1.5" step="0.1" min="0.5" max="5.0" />
+          </label>
+          <label>
+            <span>单一行业敞口上限 (%)</span>
+            <input type="number" id="portSectorCap" value="30.0" step="5.0" min="10.0" max="50.0" />
+          </label>
+          <label>
+            <span>单只标的权重上限 (%)</span>
+            <input type="number" id="portSingleCap" value="25.0" step="5.0" min="10.0" max="40.0" />
+          </label>
+          <label>
+            <span>宏观仓位上限约束 (%)</span>
+            <input type="number" id="portMacroCap" value="60.0" step="5.0" min="20.0" max="100.0" />
+          </label>
+          <button type="button" id="btnRecalculatePortfolio" class="btn-primary btn-calc-port">
+            <span>测算建仓头寸</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 组合分配总结 KPI 卡片 -->
+      <div class="portfolio-summary-grid">
+        <div class="port-sum-card">
+          <span class="label">账户可用总资金</span>
+          <strong id="portSumTotal">$100,000</strong>
+        </div>
+        <div class="port-sum-card highlight">
+          <span class="label">实际拟建仓总额</span>
+          <strong id="portSumInvested">$0</strong>
+          <small id="portSumInvestedPct">总仓位: 0.0%</small>
+        </div>
+        <div class="port-sum-card">
+          <span class="label">现金安全垫 (防守缓冲)</span>
+          <strong id="portSumCash">$100,000</strong>
+          <small id="portSumCashPct">现金占比: 100.0%</small>
+        </div>
+        <div class="port-sum-card">
+          <span class="label">风控约束拦截触发</span>
+          <strong id="portSumConstraints">0 只标的</strong>
+          <small id="portSumConstraintsDesc">未触发行业超标调减</small>
+        </div>
+      </div>
+
+      <!-- 表 1：拟建仓标的理论分配试算表 (Rule P2 15) -->
+      <div class="portfolio-table-card">
+        <div class="table-card-header">
+          <h3>表 1：按今日入选标的理论模拟试算（非实盘配置指令 · 静态 Beta/IV 估计）</h3>
+          <span class="header-note">⚠️ 组合资金测算器：基于历史静态 Beta、ATR(14) 波动与宏观目标仓位试算分配，Beta 与隐含波动率为静态估计，非实盘下单指令</span>
+        </div>
+        <div class="table-responsive">
+          <table class="portfolio-table" id="portfolioTable">
+            <thead>
+              <tr>
+                <th>标的代码</th>
+                <th>所属行业</th>
+                <th>最新价格</th>
+                <th>ATR(14)波动</th>
+                <th>第一止损价 (2xATR)</th>
+                <th>单股风险距离</th>
+                <th>建议买入股数</th>
+                <th>分配资金额 ($)</th>
+                <th>组合权重占比</th>
+                <th>行业累计敞口</th>
+                <th>风控状态</th>
+              </tr>
+            </thead>
+            <tbody id="portfolioTableBody">
+              <tr><td colspan="11" class="text-center text-muted">点击上方“测算建仓头寸”载入配置</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 表 2：现有持仓风控自查 (Rule P2 15) -->
+      <div class="portfolio-table-card existing-holdings-card" style="margin-top: 24px;">
+        <div class="table-card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h3>表 2：现有持仓风控自查（按 2×ATR 止损与 30% 行业上限体检）</h3>
+            <span class="header-note">填入你当前的真实持仓代码与股数，使用同一套 2×ATR 止损线与单一行业 30% 敞口上限进行持仓体检</span>
+          </div>
+          <div class="table-header-btns" style="display:flex; gap:8px;">
+            <button type="button" id="btnAddHoldingRow" class="btn-ghost-sm">+ 添加持仓行</button>
+            <button type="button" id="btnInspectHoldings" class="btn-primary-sm">运行持仓体检</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="portfolio-table" id="holdingsTable">
+            <thead>
+              <tr>
+                <th style="width: 140px;">标的代码</th>
+                <th style="width: 120px;">持有股数</th>
+                <th>当前市价</th>
+                <th>持仓市值 ($)</th>
+                <th>所属行业</th>
+                <th>行业敞口 (%)</th>
+                <th>2×ATR 止损价</th>
+                <th>距止损距离</th>
+                <th>健康体检结论</th>
+                <th style="width: 70px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="holdingsTableBody">
+              <!-- 动态持仓输入行 -->
+            </tbody>
+          </table>
+        </div>
+        <div id="holdingsInspectionAlerts" class="holdings-alerts-box" style="display:none; margin-top:12px; padding:12px; border-radius:6px; font-size:12.5px; line-height:1.6;"></div>
+      </div>
+
+      <!-- 现货防守与风险对冲指引卡片 -->
+      <div class="portfolio-hedging-card">
+        <div class="card-icon">🛡️</div>
+        <div class="card-text">
+          <h4>买方防守对冲纪律 (Spot Risk Discipline)</h4>
+          <p>系统未接入实时期权链，严格禁止凭空捏造虚假期权合约行权价与权利金。本组合完全依托<strong>真实 2×ATR 动态跟踪止损线</strong>与<strong>行业 30% 敞口硬顶</strong>进行系统化防守。若某标的跌破 2×ATR 防守线，坚决无条件离场止损；若宏观状态机切换为【极度防守期】，自动触发清仓或压缩仓位至 20% 以下安全垫模式。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- 3. 历史记录模态抽屉 (History Modal / Drawer) -->
+    <div id="historyModal" class="modal-overlay" style="display: none;">
+      <div class="modal-drawer">
+        <div class="modal-header">
+          <div class="modal-title-box">
+            <span class="icon">📚</span>
+            <h3>投研历史档案书架 (Dossier Shelf)</h3>
+          </div>
+          <button type="button" id="btnCloseHistory" class="btn-close-modal">✕</button>
+        </div>
+        <p class="modal-desc">已持久化归档的个股研究档案。点击任意标的即可 0 毫秒秒开，无需重复请求或消耗算力。</p>
+
+        <div class="history-table-container">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>股票代码</th>
+                <th>公司名称</th>
+                <th>最新价格</th>
+                <th>日内涨跌</th>
+                <th>估值安全边际</th>
+                <th>最近建档/更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <!-- 动态历史列表 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 全局智能指标悬浮 Tooltip 容器 (交互式教学卡片) -->
+    <div id="smartTooltip" class="smart-tooltip" style="display: none;">
+      <div class="tooltip-header">
+        <span class="tooltip-badge" id="ttBadge">指标状态</span>
+        <strong id="ttName" class="tooltip-name">指标名称</strong>
+      </div>
+      <div class="tooltip-body">
+        <div class="tooltip-section">
+          <div class="section-tag">💡 通俗白话解释</div>
+          <p id="ttPlain" class="section-content">正在加载释义...</p>
+        </div>
+        <div class="tooltip-section">
+          <div class="section-tag">⚖️ 什么是好？什么是坏？</div>
+          <p id="ttRule" class="section-content">正在加载好坏标准...</p>
+        </div>
+        <div class="tooltip-section highlight-diagnosis">
+          <div class="section-tag">🎯 当前针对此股的诊断</div>
+          <p id="ttDiagnosis" class="section-content">正在诊断...</p>
+        </div>
+        <div class="tooltip-section">
+          <div class="section-tag">🚀 适合什么样的投资场景？</div>
+          <p id="ttScenario" class="section-content">正在加载场景建议...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. 全局全屏加载遮罩 (仅在首次全量分析时呈现) -->
+    <div id="globalLoadingOverlay" class="global-loading-overlay" style="display: none;">
+      <div class="loading-card">
+        <div class="spinner-pulsar"></div>
+        <h4 id="loadingTitle">正在进行首次深度全景建档...</h4>
+        <p id="loadingDesc">正在调阅长桥实时行情、K线、财报数据，并由大模型审计核心产品与多维估值走廊</p>
+        <div class="loading-progress-bar">
+          <div class="loading-progress-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. 浮动对比托盘 (Rule P1 11: 最多5只标的勾选快速横向对比) -->
+    <div id="compareFloatingTray" class="compare-floating-tray" style="display: none;">
+      <div class="tray-inner">
+        <div class="tray-info">
+          <span class="tray-icon">⚖️</span>
+          <span class="tray-title">已选横向对比标的 (<strong id="traySelectedCount">0</strong>/5 只)：</span>
+          <div id="traySelectedPills" class="tray-pills"></div>
+        </div>
+        <div class="tray-actions">
+          <button type="button" id="btnLaunchCompare" class="btn-primary-sm">立即横向对比</button>
+          <button type="button" id="btnClearCompare" class="btn-ghost-sm">清空</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js?v=20261012_memo_v7"></script>
   </body>
 </html>

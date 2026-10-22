@@ -14,11 +14,8 @@ from backend.services.auto_evolution import start_autonomous_daemon
 
 
 def main() -> None:
-    """Initialize SQLite database and launch institutional HTTP service."""
+    # Ensure database tables exist
     ensure_db()
-    
-    # Launch autonomous self-evolving engine in background
-    start_autonomous_daemon()
     
     # Check AI models & Longbridge status on startup
     status = check_ai_models_status()
@@ -33,7 +30,7 @@ def main() -> None:
     print("-" * 65)
     print(f"  [AI 引擎] Grok CLI:   {'✅ 可用 (' + GROK_BIN + ')' if grok_ok else '❌ 未就绪'}")
     print(f"  [AI 引擎] Gemini CLI: {'✅ 可用 (' + GEMINI_BIN + ')' if gemini_ok else '❌ 未就绪'}")
-    print(f"  [数据引擎] Longbridge:{'✅ 实时数据已就绪' if lb_ok else '⚠️ 离线模式 (已启用高保真投研基准快照，绝不白屏)'}")
+    print(f"  [数据引擎] Longbridge:{'✅ 实时数据已就绪' if lb_ok else '⚠️ 凭证过期或离线 (终端执行 longbridge auth login 可恢复实时流，已拦截合成假数据)'}")
     print("=" * 65)
     print("提示: 在终端输入 'longbridge auth login' 可随时切换毫秒级实时流。")
     print("按 Ctrl+C 可停止服务...\n")

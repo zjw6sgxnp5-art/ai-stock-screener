@@ -1,16 +1,27 @@
 """
 Database layer for SQLite storage, caching, watchlists, analysis history, and recommendation snapshots.
 """
+from contextlib import contextmanager
 import json
 import sqlite3
 import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from backend.config import DB_PATH
+from backend.config import DB_PATH, AppError
 from backend.core.utils import number_from, utc_now_iso
 
 DB_LOCK = threading.RLock()
+
+
+@contextmanager
+def get_db():
+    """Ensure SQLite database connections are cleanly closed upon context exit."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def ensure_db() -> None:
@@ -98,6 +109,21 @@ def ensure_db() -> None:
 
             conn.execute(
                 """
+                create table if not exists stock_dossiers (
+                    symbol text primary key,
+                    name text,
+                    price real,
+                    change_pct real,
+                    valuation_status text,
+                    margin_of_safety_pct real,
+                    modules_json text not null,
+                    created_at text not null,
+                    updated_at text not null
+                )
+                """
+            )
+            conn.execute(
+                """
                 create table if not exists model_evolution_log (
                     id integer primary key autoincrement,
                     created_at text not null,
@@ -127,7 +153,7 @@ def get_cache(cache_key: str) -> Optional[Any]:
     """Retrieve unexpired payload from cache."""
     now = time.time()
     with DB_LOCK:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "select payload, fetched_at, ttl_seconds from cache where cache_key = ?",
@@ -150,18 +176,19 @@ def set_cache(cache_key: str, payload: Any, ttl_seconds: int) -> None:
     now = time.time()
     raw = json.dumps(payload, ensure_ascii=False)
     with DB_LOCK:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute(
-                """
-                insert into cache (cache_key, payload, fetched_at, ttl_seconds)
-                values (?, ?, ?, ?)
-                on conflict(cache_key) do update set
-                    payload = excluded.payload,
-                    fetched_at = excluded.fetched_at,
-                    ttl_seconds = excluded.ttl_seconds
-                """,
-                (cache_key, raw, now, ttl_seconds),
-            )
+        with get_db() as conn:
+            with conn:
+                conn.execute(
+                    """
+                    insert into cache (cache_key, payload, fetched_at, ttl_seconds)
+                    values (?, ?, ?, ?)
+                    on conflict(cache_key) do update set
+                        payload = excluded.payload,
+                        fetched_at = excluded.fetched_at,
+                        ttl_seconds = excluded.ttl_seconds
+                    """,
+                    (cache_key, raw, now, ttl_seconds),
+                )
 
 
 def save_analysis(symbol: str, payload: Dict[str, Any]) -> None:
@@ -195,8 +222,47 @@ def list_watchlist() -> List[Dict[str, Any]]:
             ]
 
 
+def verify_symbol_exists(symbol: str) -> str:
+    """Verify that a US stock symbol exists and has genuine market data."""
+    clean_sym = symbol.strip().upper()
+    if not clean_sym:
+        raise AppError("请输入有效的股票代码。", 400)
+    if not clean_sym.endswith(".US") and "." not in clean_sym and not clean_sym.startswith("^"):
+        clean_sym = f"{clean_sym}.US"
+
+    import re
+    if not re.match(r"^[A-Z0-9\.\^]{1,15}$", clean_sym):
+        raise AppError(f"标的代码格式不合法：【{clean_sym}】", 400)
+
+    try:
+        from backend.services.market_data import run_longbridge, unwrap_items
+        res = run_longbridge(["quote", clean_sym, "--format", "json"], ttl_seconds=300, timeout=5)
+        items = unwrap_items(res.get("data"))
+        if items:
+            for it in items:
+                it_sym = str(it.get("symbol") or "").upper()
+                if it_sym == clean_sym or it_sym == clean_sym.replace(".US", ""):
+                    last = it.get("last_done") or it.get("last") or it.get("prev_close")
+                    if last is not None and float(last) > 0:
+                        return clean_sym
+    except Exception:
+        pass
+
+    try:
+        from backend.services.backtester import fetch_yahoo_history
+        pure_sym = clean_sym.replace(".US", "").replace(".", "-")
+        hist = fetch_yahoo_history(pure_sym, "5d")
+        if hist and len(hist) > 0:
+            return clean_sym
+    except Exception:
+        pass
+
+    raise AppError(f"标的代码【{clean_sym}】在市场中不存在或未能取得有效行情，无法加入自选池。", 400)
+
+
 def add_watchlist_symbol(symbol: str, group_name: str = "默认", note: str = "") -> Dict[str, Any]:
-    """Add or update symbol in watchlist."""
+    """Add or update verified symbol in watchlist."""
+    valid_symbol = verify_symbol_exists(symbol)
     now = utc_now_iso()
     with DB_LOCK:
         with sqlite3.connect(DB_PATH) as conn:
@@ -209,9 +275,9 @@ def add_watchlist_symbol(symbol: str, group_name: str = "默认", note: str = ""
                     note = excluded.note,
                     updated_at = excluded.updated_at
                 """,
-                (symbol, group_name, note, now, now),
+                (valid_symbol, group_name, note, now, now),
             )
-    return {"ok": True, "symbol": symbol, "group": group_name, "note": note}
+    return {"ok": True, "symbol": valid_symbol, "group": group_name, "note": note}
 
 
 def remove_watchlist_symbol(symbol: str) -> Dict[str, Any]:
@@ -298,6 +364,41 @@ def archive_recommendation_snapshot(
     with DB_LOCK:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
+            date_prefix = now[:10]  # YYYY-MM-DD
+            cursor.execute(
+                """
+                select id from recommendation_snapshots
+                where symbol = ? and source_type = ? and substr(created_at, 1, 10) = ?
+                order by id desc limit 1
+                """,
+                (symbol, source_type, date_prefix)
+            )
+            existing = cursor.fetchone()
+            if existing:
+                snap_id = existing[0]
+                cursor.execute(
+                    """
+                    update recommendation_snapshots set
+                        created_at = ?, price = ?, spy_price = ?, vix_value = ?, score = ?, verdict = ?,
+                        tags = ?, short_term_thesis = ?, mid_term_thesis = ?, long_term_thesis = ?,
+                        stop_loss_price = ?, target_price = ?, ai_model = ?, evidence_json = ?, review_note = ?
+                    where id = ?
+                    """,
+                    (
+                        now, price, spy_price, vix_value, score, verdict,
+                        tags_str, short_term_thesis, mid_term_thesis, long_term_thesis,
+                        stop_loss_price, target_price, ai_model, evidence_json, review_note,
+                        snap_id
+                    )
+                )
+                return {
+                    "ok": True,
+                    "id": snap_id,
+                    "symbol": symbol,
+                    "source_type": source_type,
+                    "created_at": now,
+                    "updated": True
+                }
             cursor.execute(
                 """
                 insert into recommendation_snapshots (
@@ -332,7 +433,7 @@ def get_review_snapshots(limit: int = 50) -> List[Dict[str, Any]]:
                 """
                 select id, symbol, source_type, created_at, price, spy_price, vix_value, score, verdict,
                        tags, short_term_thesis, mid_term_thesis, long_term_thesis,
-                       stop_loss_price, target_price, ai_model, t5_price, t20_price, alpha, review_note
+                       stop_loss_price, target_price, ai_model, status, t5_price, t20_price, alpha, review_note
                 from recommendation_snapshots
                 order by id desc limit ?
                 """,
@@ -358,6 +459,7 @@ def get_review_snapshots(limit: int = 50) -> List[Dict[str, Any]]:
                     "stop_loss_price": row["stop_loss_price"],
                     "target_price": row["target_price"],
                     "ai_model": row["ai_model"],
+                    "status": row["status"],
                     "t5_price": row["t5_price"],
                     "t20_price": row["t20_price"],
                     "alpha": row["alpha"],
@@ -510,3 +612,220 @@ def update_snapshot_evaluation(
                 """,
                 (t5_price, t20_price, alpha, status, review_note, snapshot_id)
             )
+
+
+# ==============================================================================
+# Stock Dossier (Modular Long-Term Research Persistence)
+# ==============================================================================
+
+def save_or_update_dossier(
+    symbol: str,
+    name: str,
+    price: Optional[float],
+    change_pct: Optional[float],
+    valuation_status: str,
+    margin_of_safety_pct: Optional[float],
+    modules_dict: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Persist or update an entire structured dossier for a symbol."""
+    ensure_db()
+    now = utc_now_iso()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            existing = cursor.execute("SELECT created_at FROM stock_dossiers WHERE symbol = ?", (symbol,)).fetchone()
+            created_at = existing[0] if existing else now
+            cursor.execute(
+                """
+                INSERT INTO stock_dossiers (
+                    symbol, name, price, change_pct, valuation_status,
+                    margin_of_safety_pct, modules_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(symbol) DO UPDATE SET
+                    name = excluded.name,
+                    price = excluded.price,
+                    change_pct = excluded.change_pct,
+                    valuation_status = excluded.valuation_status,
+                    margin_of_safety_pct = excluded.margin_of_safety_pct,
+                    modules_json = excluded.modules_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    symbol, name, price, change_pct, valuation_status,
+                    margin_of_safety_pct, json.dumps(modules_dict, ensure_ascii=False),
+                    created_at, now
+                )
+            )
+            return {
+                "symbol": symbol,
+                "name": name,
+                "price": price,
+                "change_pct": change_pct,
+                "valuation_status": valuation_status,
+                "margin_of_safety_pct": margin_of_safety_pct,
+                "modules": modules_dict,
+                "created_at": created_at,
+                "updated_at": now
+            }
+
+
+def get_dossier(symbol: str) -> Optional[Dict[str, Any]]:
+    """Retrieve full cached dossier for a symbol."""
+    ensure_db()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.cursor().execute(
+                """
+                SELECT symbol, name, price, change_pct, valuation_status,
+                       margin_of_safety_pct, modules_json, created_at, updated_at
+                FROM stock_dossiers WHERE symbol = ?
+                """,
+                (symbol,)
+            ).fetchone()
+            if not row:
+                return None
+            try:
+                mods = json.loads(row["modules_json"])
+            except Exception:
+                mods = {}
+            return {
+                "symbol": row["symbol"],
+                "name": row["name"],
+                "price": row["price"],
+                "change_pct": row["change_pct"],
+                "valuation_status": row["valuation_status"],
+                "margin_of_safety_pct": row["margin_of_safety_pct"],
+                "modules": mods,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"]
+            }
+
+
+def update_dossier_module(symbol: str, module_name: str, module_payload: Any) -> Optional[Dict[str, Any]]:
+    """Granularly update a single module inside an existing dossier without touching others."""
+    ensure_db()
+    now = utc_now_iso()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            row = cursor.execute(
+                "SELECT modules_json, name, price, change_pct, valuation_status, margin_of_safety_pct, created_at FROM stock_dossiers WHERE symbol = ?",
+                (symbol,)
+            ).fetchone()
+            if not row:
+                return None
+            try:
+                mods = json.loads(row["modules_json"])
+            except Exception:
+                mods = {}
+
+            mods[module_name] = {
+                "updated_at": now,
+                "data": module_payload
+            }
+
+            cursor.execute(
+                "UPDATE stock_dossiers SET modules_json = ?, updated_at = ? WHERE symbol = ?",
+                (json.dumps(mods, ensure_ascii=False), now, symbol)
+            )
+            return {
+                "symbol": symbol,
+                "module": module_name,
+                "updated_at": now,
+                "data": module_payload,
+                "modules": mods
+            }
+
+
+def update_dossier_price(
+    symbol: str,
+    price: float,
+    change_pct: float,
+    technical_data: Optional[Dict[str, Any]] = None,
+    valuation_data: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Hot sync current market price and technical indicators without touching deep research modules."""
+    ensure_db()
+    now = utc_now_iso()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            row = cursor.execute("SELECT modules_json FROM stock_dossiers WHERE symbol = ?", (symbol,)).fetchone()
+            if not row:
+                return None
+            try:
+                mods = json.loads(row["modules_json"])
+            except Exception:
+                mods = {}
+
+            if technical_data is not None:
+                mods["technical_compass"] = {
+                    "updated_at": now,
+                    "data": technical_data
+                }
+            if valuation_data is not None:
+                mods["valuation_matrix"] = {
+                    "updated_at": now,
+                    "data": valuation_data
+                }
+
+            val_status = valuation_data.get("status") if valuation_data else None
+            margin_pct = valuation_data.get("margin_of_safety_pct") if valuation_data else None
+
+            cursor.execute(
+                """
+                UPDATE stock_dossiers
+                SET price = ?,
+                    change_pct = ?,
+                    valuation_status = COALESCE(?, valuation_status),
+                    margin_of_safety_pct = COALESCE(?, margin_of_safety_pct),
+                    modules_json = ?,
+                    updated_at = ?
+                WHERE symbol = ?
+                """,
+                (price, change_pct, val_status, margin_pct, json.dumps(mods, ensure_ascii=False), now, symbol)
+            )
+            return get_dossier(symbol)
+
+
+def list_dossier_history() -> List[Dict[str, Any]]:
+    """List all archived dossiers for the history panel."""
+    ensure_db()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.cursor().execute(
+                """
+                SELECT symbol, name, price, change_pct, valuation_status,
+                       margin_of_safety_pct, created_at, updated_at
+                FROM stock_dossiers
+                ORDER BY updated_at DESC
+                """
+            ).fetchall()
+            return [
+                {
+                    "symbol": r["symbol"],
+                    "name": r["name"] or r["symbol"],
+                    "price": r["price"],
+                    "change_pct": r["change_pct"],
+                    "valuation_status": r["valuation_status"] or "分析中",
+                    "margin_of_safety_pct": r["margin_of_safety_pct"],
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"]
+                }
+                for r in rows
+            ]
+
+
+def delete_dossier(symbol: str) -> bool:
+    """Remove a dossier entry from history."""
+    ensure_db()
+    with DB_LOCK:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM stock_dossiers WHERE symbol = ?", (symbol,))
+            return cursor.rowcount > 0
+

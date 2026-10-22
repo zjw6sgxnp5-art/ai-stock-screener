@@ -6,6 +6,7 @@ from backend.services.macro_service import get_macro_climate
 from backend.services.market_data import (
     export_markdown_report,
     fetch_stock_bundle,
+    fetch_yahoo_stock_bundle,
     generate_fallback_stock_bundle,
     longbridge_status,
 )

@@ -45,18 +45,26 @@ def parse_symbol_list(raw: str, default: Optional[List[str]] = None, max_count: 
 
 
 def number_from(value: Any) -> Optional[float]:
-    """Extract float from various data types safely."""
+    """Extract float from various data types safely, including multiples like '28.12x' and percentages."""
     if value is None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
-        cleaned = value.strip().replace(",", "").replace("%", "")
+        cleaned = value.strip().replace(",", "").replace("%", "").replace("$", "")
+        if cleaned.lower().endswith("x"):
+            cleaned = cleaned[:-1].strip()
         if not cleaned:
             return None
         try:
             return float(cleaned)
         except ValueError:
+            m = re.search(r"[-+]?\d*\.?\d+", cleaned)
+            if m:
+                try:
+                    return float(m.group(0))
+                except ValueError:
+                    return None
             return None
     return None
 
