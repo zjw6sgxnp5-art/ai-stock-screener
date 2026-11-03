@@ -36,5 +36,27 @@ class LongbridgeFastFailTest(unittest.TestCase):
             self.assertEqual(which.call_count, 1)
 
 
+
+
+class FrontendYahooModeNoticeTest(unittest.TestCase):
+    def test_app_js_checks_longbridge_status_and_shows_notice(self):
+        from pathlib import Path
+        js = (Path(__file__).resolve().parent.parent / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("/api/datasources/longbridge/status", js)
+        self.assertIn("yahooModeNoticeHtml()", js)
+        self.assertIn("applyYahooModeNotice();", js)
+
+
+class CliTimeoutMessageTest(unittest.TestCase):
+    def test_timeout_message_reports_actual_timeout(self):
+        import subprocess
+        from backend.services import ai_engine
+        with mock.patch.object(ai_engine, "get_cache", return_value=None), \
+             mock.patch.object(ai_engine, "set_cache", create=True), \
+             mock.patch.object(ai_engine.subprocess, "run", side_effect=subprocess.TimeoutExpired("gemini", 7)):
+            res = ai_engine.run_cli_model("gemini", "hi", timeout=7)
+        self.assertIn("7 秒内", str(res))
+
+
 if __name__ == "__main__":
     unittest.main()
