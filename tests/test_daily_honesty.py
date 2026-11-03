@@ -1,4 +1,5 @@
 """Honesty checks for the daily gate, missing scores, and non-preset dossiers."""
+import _testdb  # noqa: F401  (must precede backend imports)
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch

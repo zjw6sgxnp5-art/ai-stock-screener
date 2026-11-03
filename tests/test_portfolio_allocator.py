@@ -1,6 +1,7 @@
 """
 Unit tests for ATR risk parity portfolio allocation and sector cap constraints.
 """
+import _testdb  # noqa: F401  (must precede backend imports)
 import unittest
 
 from backend.services.portfolio_allocator import (

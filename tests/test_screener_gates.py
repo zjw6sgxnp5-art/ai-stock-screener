@@ -1,6 +1,7 @@
 """
 Unit tests for multi-factor screener gates and scoring attribution.
 """
+import _testdb  # noqa: F401  (must precede backend imports)
 import unittest
 
 from backend.core.financial import build_factor_breakdown

@@ -1,6 +1,7 @@
 """
 Unit tests for technical indicators in backend/core/indicators.py.
 """
+import _testdb  # noqa: F401  (must precede backend imports)
 import math
 import unittest
 

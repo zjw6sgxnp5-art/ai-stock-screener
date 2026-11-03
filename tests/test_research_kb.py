@@ -1,6 +1,7 @@
 """
 Unit tests for Research Knowledge Base (Benchmark V4 + User S&P 500).
 """
+import _testdb  # noqa: F401  (must precede backend imports)
 import unittest
 
 from backend.core.stock_registry import get_all_registered_stocks

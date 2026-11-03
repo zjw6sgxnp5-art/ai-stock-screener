@@ -14,6 +14,13 @@ from backend.core.utils import utc_now_iso
 from backend.db import get_cache, set_cache
 
 
+def calmar_ratio(cagr_pct: float, max_drawdown_pct: float) -> float:
+    """Calmar = CAGR / |MaxDrawdown|. Sign follows CAGR; 0.0 when there is no drawdown."""
+    if not max_drawdown_pct or max_drawdown_pct >= 0:
+        return 0.0
+    return cagr_pct / abs(max_drawdown_pct)
+
+
 def fetch_yahoo_history(symbol: str, range_str: str = "2y", force_refresh: bool = False) -> Dict[str, Dict[str, float]]:
     """
     Fetch daily OHLCV historical series from Yahoo Finance without external dependencies.
@@ -274,7 +281,7 @@ def run_quantitative_backtest(
 
     mdd_strat = calculate_max_drawdown(portfolio_equity)
     mdd_spy = calculate_max_drawdown(benchmark_equity)
-    calmar = abs(cagr_strat / mdd_strat) if mdd_strat < 0 else 0.0
+    calmar = calmar_ratio(cagr_strat, mdd_strat)
     win_rate = (winning_trades / trades_count * 100.0) if trades_count > 0 else 0.0
 
     sampled_dates = list(sim_dates[::5])

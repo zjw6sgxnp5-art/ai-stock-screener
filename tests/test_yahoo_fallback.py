@@ -1,6 +1,7 @@
 """
 Unit tests for Yahoo Finance resilient data fallback service.
 """
+import _testdb  # noqa: F401  (must precede backend imports)
 import unittest
 
 from backend.services.market_data import (
