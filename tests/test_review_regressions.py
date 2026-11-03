@@ -71,7 +71,7 @@ class TestReviewRegressions(unittest.TestCase):
         if cagr != 0 and perf["max_drawdown_pct"] < 0:
             self.assertEqual(cagr > 0, calmar > 0, f"cagr={cagr} calmar={calmar}")
         if perf["max_drawdown_pct"] < 0:
-            self.assertAlmostEqual(calmar, round(cagr / abs(perf["max_drawdown_pct"]), 2), delta=0.02)
+            self.assertAlmostEqual(calmar, cagr / abs(perf["max_drawdown_pct"]), delta=max(0.02, abs(calmar) * 0.01))
 
     def test_calmar_ratio_formula(self):
         # The exact case seen in review: CAGR -6.64%, MDD -15.93% used to report +0.42

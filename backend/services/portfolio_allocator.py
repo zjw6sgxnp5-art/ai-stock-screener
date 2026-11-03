@@ -3,6 +3,7 @@ Step 5.5 Portfolio Allocation & Risk Parity Engine:
 Institutional sector exposure caps (<= 30%), ATR-based risk parity sizing,
 and derivative hedging strategies (Protective Put / Covered Call).
 """
+from backend.config import ATR_STOP_MULTIPLIER
 import math
 from typing import Any, Dict, List, Optional
 
@@ -106,7 +107,7 @@ def calculate_portfolio_allocation(
             atr = round(float(atr_val), 2)
         else:
             atr = estimate_atr(last_price, tech)
-        stop_distance = round(atr * 2.0, 2)
+        stop_distance = round(atr * ATR_STOP_MULTIPLIER, 2)
         stop_price = item.get("stop_loss") or tech.get("trailing_stop_2atr") or max(0.5, round(last_price - stop_distance, 2))
         stop_loss_pct = round((stop_distance / last_price) * 100, 2)
 
@@ -271,7 +272,7 @@ def inspect_existing_holdings(
 
         # Estimate genuine 14-day ATR from price
         atr = estimate_atr(last_price)
-        stop_dist = round(atr * 2.0, 2)
+        stop_dist = round(atr * ATR_STOP_MULTIPLIER, 2)
         stop_price = max(0.5, round(last_price - stop_dist, 2)) if last_price > 0 else 0.0
         stop_pct = round((stop_dist / last_price) * 100, 1) if last_price > 0 else 0.0
 

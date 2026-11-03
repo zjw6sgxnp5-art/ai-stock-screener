@@ -3662,7 +3662,7 @@ async function loadBacktestTab(force = false) {
   const range = (document.getElementById("btRangeSelect") || {}).value || "2y";
   const freq = (document.getElementById("btFreqSelect") || {}).value || "15";
   const topN = (document.getElementById("btTopNSelect") || {}).value || "3";
-  const atr = (document.getElementById("btAtrSelect") || {}).value || "2.5";
+  const atr = (document.getElementById("btAtrSelect") || {}).value || "2.0";
   const btn = document.getElementById("btnRunBacktest");
 
   if (btn) btn.disabled = true;
@@ -3678,6 +3678,19 @@ async function loadBacktestTab(force = false) {
       const disclaimerEl = document.getElementById("btDisclaimerText");
       if (disclaimerEl && bt.disclaimer) {
         disclaimerEl.textContent = bt.disclaimer;
+      }
+      const survEl = document.getElementById("btSurvivorshipWarning");
+      const surv = bt.survivorship_warning;
+      if (survEl) {
+        const msg = (surv && surv.message) || bt.survivorship_disclaimer || "";
+        survEl.textContent = msg;
+        survEl.style.display = msg ? "block" : "none";
+      }
+      const asmEl = document.getElementById("btAssumptions");
+      const asm = bt.assumptions;
+      if (asmEl && asm) {
+        asmEl.textContent = `执行假设：${asm.signal}出信号 → ${asm.execution}成交；止损成交价 ${asm.stop_fill}；${asm.atr} × ${asm.atr_mult}；单边成本 ${asm.cost_bps_per_side}bp + 滑点 ${asm.slippage_bps_per_side}bp；基准 ${asm.benchmark}；标的池 ${(asm.universe || []).length} 只`;
+        asmEl.style.display = "block";
       }
 
       let curve = bt.equity_curve || (Array.isArray(data.equity_curve) ? data.equity_curve : null);
@@ -3860,6 +3873,16 @@ async function loadSensitivityMatrix(range = "2y", topN = 3, force = false) {
     if (sens && (sens.grid || sens.matrix)) {
       state.sensitivityData = sens;
       renderSensitivityTable(sens);
+      const noteEl = document.getElementById("sensitivitySplitNote");
+      const split = sens.sample_split;
+      if (noteEl && split) {
+        const isP = split.in_sample_period || {};
+        const oosP = split.out_of_sample_period || {};
+        const opt = (sens.optimal || {}).out_of_sample;
+        noteEl.textContent = `样本内 ${isP.start_date || "?"} ~ ${isP.end_date || "?"}；样本外 ${oosP.start_date || "?"} ~ ${oosP.end_date || "?"}` +
+          (opt ? `；★ 组合样本外：收益 ${opt.total_return}% / 夏普 ${opt.sharpe} / 回撤 ${opt.max_drawdown_pct}%` : "");
+        noteEl.style.display = "block";
+      }
     }
   } catch (err) {
     if (tbody) tbody.innerHTML = `<tr><td class="text-center text-muted">敏感度矩阵载入失败：${escapeHtml(err.message)}</td></tr>`;
@@ -3937,7 +3960,9 @@ function renderSensitivityTable(sens) {
                     ((optimal.best_sharpe?.freq === freq) && Math.abs((optimal.best_sharpe?.atr_mult || 0) - atr) < 0.05);
       const border = isOpt ? "border: 2px solid #38bdf8;" : "border: 1px solid rgba(255,255,255,0.08);";
 
-      return `<td style="background: ${cellBg}; color: ${textColor}; ${border}" title="${key}">${displayVal} ${isOpt ? '★' : ''}</td>`;
+      const oos = item && item.oos;
+      const tip = oos ? `${key} | 样本外: 收益 ${oos.total_return}% · 夏普 ${oos.sharpe} · 回撤 ${oos.max_drawdown_pct}%` : key;
+      return `<td style="background: ${cellBg}; color: ${textColor}; ${border}" title="${escapeHtml(tip)}">${displayVal} ${isOpt ? '★' : ''}</td>`;
     }).join("");
     return `<tr><th>每 ${freq} 交易日</th>${cells}</tr>`;
   }).join("");

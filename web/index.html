@@ -610,6 +610,8 @@
       <!-- 回测模型说明与免责警示 (Rule 3 & P2 14) -->
       <div id="btDisclaimerBox" class="backtest-disclaimer-alert" style="margin: 0.75rem 0 1rem 0; padding: 0.75rem 1.1rem; background: rgba(239, 68, 68, 0.08); border-left: 3px solid #ef4444; border-radius: 4px; font-size: 0.82rem; color: #cbd5e1; line-height: 1.6;">
         <span style="color: #f87171; font-weight: 700;">【量化动量实验声明 · 不验证每日多因子推荐】</span>
+        <div id="btSurvivorshipWarning" style="display:none; margin-bottom: 0.4rem; color: #fbbf24; font-weight: 600;"></div>
+        <div id="btAssumptions" style="display:none; margin-bottom: 0.4rem; color: #94a3b8;"></div>
         <span id="btDisclaimerText">本回测为纯动量与 2×ATR 跟踪止损实验，基于日 K 线时序动量重放。由于开源与长桥历史数据无法取得当时时点（Point-in-Time）的真实财报与行业 PE 估值中位数，因此未纳入财务质量分、估值分与催化分，不得作为页面上每日多因子推荐胜率的证明依据。</span>
       </div>
 
@@ -643,8 +645,8 @@
           <label>
             <span>跟踪止损 (ATR 倍数)</span>
             <select id="btAtrSelect">
-              <option value="2.0">2.0× ATR (紧密防守)</option>
-              <option value="2.5" selected>2.5× ATR (标准回踩)</option>
+              <option value="2.0" selected>2.0× ATR (实盘默认防守)</option>
+              <option value="2.5">2.5× ATR (宽松回踩)</option>
               <option value="3.0">3.0× ATR (宽幅容忍)</option>
             </select>
           </label>
@@ -718,7 +720,8 @@
             <button type="button" class="tab-btn" data-metric="max_drawdown">最大回撤 (%)</button>
           </div>
         </div>
-        <p class="sensitivity-desc">网格遍历不同调仓周期与持仓集中度，高亮最具鲁棒性的最优参数前沿，严防过拟合“参数孤岛”。</p>
+        <p class="sensitivity-desc">网格遍历不同调仓周期与 ATR 倍数。<strong>格内数值为样本内 (In-Sample) 结果</strong>，★ 最优参数仅在样本内选出；鼠标悬停可查看样本外 (Out-of-Sample) 验证，样本外显著变差即为过拟合。</p>
+        <p class="sensitivity-desc" id="sensitivitySplitNote" style="display:none; color:#fbbf24;"></p>
         <div class="heatmap-table-wrap">
           <table class="sensitivity-grid-table" id="sensitivityGridTable">
             <tbody id="sensitivityTableBody">
