@@ -1,6 +1,7 @@
 """
 Technical and quantitative indicators: Moving Averages, RSI, Volatility, Drawdowns.
 """
+from backend.config import ATR_STOP_MULTIPLIER
 import math
 from typing import Any, Dict, List, Optional
 
@@ -193,7 +194,7 @@ def compute_technical_summary(klines: List[Dict[str, Any]]) -> Dict[str, Any]:
     bb_res = bollinger_bands(closes)
 
     # Generate institutional technical analysis modules
-    price_ladder = build_support_resistance_ladder(last, highs, lows, closes, ma20, ma60, bb_res, round(last - 2 * atr14_val, 2) if (last and atr14_val) else None)
+    price_ladder = build_support_resistance_ladder(last, highs, lows, closes, ma20, ma60, bb_res, round(last - ATR_STOP_MULTIPLIER * atr14_val, 2) if (last and atr14_val) else None)
     trend_resonance = build_trend_resonance(last, ma20, ma60, ma200, returns)
     volume_action = build_volume_price_action(volume_ratio, returns.get("5d"), returns.get("20d"))
     tactical_checklist = build_tactical_checklist(bool(last is not None and ma20 is not None and last >= ma20), bool(last is not None and ma60 is not None and last >= ma60), rsi_val, macd_res.get("macd_bar") if macd_res else None, atr_pct)
@@ -215,7 +216,7 @@ def compute_technical_summary(klines: List[Dict[str, Any]]) -> Dict[str, Any]:
         "bollinger": bb_res,
         "atr14": atr14_val,
         "atr_pct": atr_pct,
-        "trailing_stop_2atr": round(last - 2 * atr14_val, 2) if (last and atr14_val) else None,
+        "trailing_stop_2atr": round(last - ATR_STOP_MULTIPLIER * atr14_val, 2) if (last and atr14_val) else None,
         "volume_ratio_20d": volume_ratio,
         "candles": len(closes),
         "price_ladder": price_ladder,
