@@ -12,12 +12,14 @@ services:
       AI_STOCK_DB: /app/data/app.sqlite
       LONG_BRIDGE_BIN: longbridge
       LONG_BRIDGE_TIMEOUT: ${LONG_BRIDGE_TIMEOUT:-25}
-      AI_STOCK_LLM_MODEL: ${AI_STOCK_LLM_MODEL:-gpt-5.2}
+      AI_STOCK_LLM_MODEL: ${AI_STOCK_LLM_MODEL:-gemini-1.5-pro}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
-      - "${AI_STOCK_HOST_PORT:-8765}:8765"
+      # 安全约束：仅监听宿主机本地回环 127.0.0.1，阻断局域网未授权访问
+      - "127.0.0.1:${AI_STOCK_HOST_PORT:-8765}:8765"
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
+      # 可选：以只读模式挂载宿主机长桥凭证（若无需长桥行情可注释本行）
       - ${HOME}/.longbridge:/root/.longbridge:ro
     restart: unless-stopped

@@ -3662,7 +3662,7 @@ async function loadBacktestTab(force = false) {
   const range = (document.getElementById("btRangeSelect") || {}).value || "2y";
   const freq = (document.getElementById("btFreqSelect") || {}).value || "15";
   const topN = (document.getElementById("btTopNSelect") || {}).value || "3";
-  const atr = (document.getElementById("btAtrSelect") || {}).value || "2.5";
+  const atr = (document.getElementById("btAtrSelect") || {}).value || "2.0";
   const btn = document.getElementById("btnRunBacktest");
 
   if (btn) btn.disabled = true;

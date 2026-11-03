@@ -10,7 +10,13 @@ from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
 from backend.config import AppError, STATIC_DIR
-from backend.core.utils import number_from, parse_symbol_list, utc_now_iso
+from backend.core.utils import (
+    is_valid_symbol,
+    normalize_symbol,
+    number_from,
+    parse_symbol_list,
+    utc_now_iso,
+)
 from backend.db import (
     add_watchlist_symbol,
     archive_recommendation_snapshot,
@@ -45,23 +51,60 @@ from backend.services.screener import (
 from backend.services.tech_radar import get_tech_catalysts
 
 
+def is_safe_origin(origin: Optional[str]) -> bool:
+    """Validate whether an Origin/Referer header is local/trusted."""
+    if not origin:
+        return True
+    origin = origin.strip().lower()
+    if origin in ("null", "file://"):
+        return True
+    try:
+        parsed = urlparse(origin)
+        hostname = (parsed.hostname or "").lower()
+        return hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "testserver")
+    except Exception:
+        return False
+
+
+def apply_cors_headers(handler: BaseHTTPRequestHandler) -> None:
+    """Apply safe CORS headers if origin is trusted. Untrusted external origins are blocked."""
+    origin = handler.headers.get("Origin")
+    if origin and is_safe_origin(origin):
+        handler.send_header("Access-Control-Allow-Origin", origin)
+        handler.send_header("Access-Control-Allow-Credentials", "true")
+        handler.send_header("Vary", "Origin")
+
+
+def sanitize_symbol(raw: Any, default: str = "") -> str:
+    """Sanitize and validate a single stock symbol. Returns default if invalid."""
+    if not raw or not isinstance(raw, str):
+        return default
+    raw_clean = raw.strip()
+    if not is_valid_symbol(raw_clean):
+        return default
+    cleaned = normalize_symbol(raw_clean)
+    if not is_valid_symbol(cleaned):
+        return default
+    return cleaned
+
+
 def json_response(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200) -> None:
-    """Send JSON response with UTF-8 encoding."""
+    """Send JSON response with UTF-8 encoding and safe CORS."""
     body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
+    apply_cors_headers(handler)
     handler.end_headers()
     handler.wfile.write(body)
 
 
 def text_response(handler: BaseHTTPRequestHandler, body: bytes, content_type: str, status: int = 200) -> None:
-    """Send raw text/binary response."""
+    """Send raw text/binary response with safe CORS."""
     handler.send_response(status)
     handler.send_header("Content-Type", content_type)
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
+    apply_cors_headers(handler)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -87,11 +130,23 @@ class RequestHandler(BaseHTTPRequestHandler):
     server_version = "AIStockTerminal/2.0"
 
     def do_OPTIONS(self) -> None:
-        """Handle CORS pre-flight requests."""
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        """Handle CORS pre-flight requests with strict origin verification."""
+        origin = self.headers.get("Origin")
+        if origin and not is_safe_origin(origin):
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"403 Forbidden: Cross-origin request rejected.")
+            return
+
+        self.send_response(204)
+        if origin and is_safe_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -153,13 +208,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/research/detail":
                 from backend.services.research_kb import get_stock_research_detail
                 params = parse_qs(parsed.query)
-                symbol = params.get("symbol", ["AAPL"])[0]
+                symbol = sanitize_symbol(params.get("symbol", ["AAPL"])[0], "AAPL")
                 json_response(self, get_stock_research_detail(symbol))
                 return
             if parsed.path == "/api/research/report":
                 from backend.services.research_kb import get_stock_markdown_report
                 params = parse_qs(parsed.query)
-                symbol = params.get("symbol", ["AAPL"])[0]
+                symbol = sanitize_symbol(params.get("symbol", ["AAPL"])[0], "AAPL")
                 json_response(self, get_stock_markdown_report(symbol))
                 return
             if parsed.path == "/api/tech/catalysts":
@@ -194,7 +249,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/dossier":
                 params = parse_qs(parsed.query)
-                symbol = params.get("symbol", ["NVDA.US"])[0]
+                symbol = sanitize_symbol(params.get("symbol", ["NVDA.US"])[0], "NVDA.US")
                 force = params.get("force", ["0"])[0] in ("1", "true", "yes")
                 json_response(self, {"ok": True, "dossier": get_or_create_dossier(symbol, force_refresh=force)})
                 return
@@ -203,7 +258,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/analyze":
                 params = parse_qs(parsed.query)
-                symbol = params.get("symbol", ["NVDA.US"])[0]
+                symbol = sanitize_symbol(params.get("symbol", ["NVDA.US"])[0], "NVDA.US")
                 include_extra = params.get("extra", ["1"])[0] not in ("0", "false", "no")
                 json_response(self, fetch_stock_bundle(symbol, include_ai=False, include_extra=include_extra))
                 return
@@ -228,7 +283,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/report/export":
                 params = parse_qs(parsed.query)
-                symbol = params.get("symbol", [""])[0]
+                symbol = sanitize_symbol(params.get("symbol", [""])[0], "")
+                if not symbol:
+                    raise AppError("请提供有效的股票代码进行报告导出。", 400)
                 json_response(self, export_markdown_report(symbol))
                 return
             if parsed.path == "/api/backtest/run":
@@ -236,7 +293,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 range_str = params.get("range", ["2y"])[0]
                 rebal_freq = int(params.get("rebalance_freq", ["15"])[0] or 15)
                 top_n = int(params.get("top_n", ["3"])[0] or 3)
-                atr_mult = float(params.get("atr_mult", ["2.5"])[0] or 2.5)
+                atr_mult = float(params.get("atr_mult", ["2.0"])[0] or 2.0)
                 force = params.get("force", ["0"])[0] in ("1", "true", "yes")
                 json_response(self, run_quantitative_backtest(
                     range_str=range_str,
@@ -268,9 +325,15 @@ class RequestHandler(BaseHTTPRequestHandler):
             json_response(self, {"ok": False, "error": f"服务器异常：{exc}"}, 500)
 
     def do_POST(self) -> None:
-        """Handle POST requests."""
+        """Handle POST requests with CSRF protection and symbol validation."""
         parsed = urlparse(self.path)
         try:
+            origin = self.headers.get("Origin")
+            referer = self.headers.get("Referer")
+            if (origin and not is_safe_origin(origin)) or (referer and not is_safe_origin(referer)):
+                json_response(self, {"ok": False, "error": "403 Forbidden: 跨域写操作已被安全拦截。"}, 403)
+                return
+
             length = int(self.headers.get("Content-Length", "0") or 0)
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
@@ -279,20 +342,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                 raise AppError("请求体 JSON 格式异常。", 400)
 
             if parsed.path == "/api/dossier/refresh-module":
-                symbol = body.get("symbol", "NVDA.US")
+                symbol = sanitize_symbol(body.get("symbol", "NVDA.US"), "NVDA.US")
                 module_name = body.get("module", "core_products")
                 json_response(self, refresh_dossier_module(symbol, module_name))
                 return
             if parsed.path == "/api/dossier/sync-price":
-                symbol = body.get("symbol", "NVDA.US")
+                symbol = sanitize_symbol(body.get("symbol", "NVDA.US"), "NVDA.US")
                 json_response(self, hot_sync_price_and_technicals(symbol))
                 return
             if parsed.path == "/api/dossiers/delete":
-                symbol = body.get("symbol", "")
+                symbol = sanitize_symbol(body.get("symbol", ""), "")
+                if not symbol:
+                    raise AppError("请提供有效的标的代码。", 400)
                 json_response(self, {"ok": True, "deleted": delete_dossier(symbol)})
                 return
             if parsed.path == "/api/analyze/cli":
-                symbol = body.get("symbol", "NVDA.US")
+                symbol = sanitize_symbol(body.get("symbol", "NVDA.US"), "NVDA.US")
                 model = body.get("model", "gemini")
                 json_response(self, run_cli_analysis_for_symbol(symbol, model_name=model))
                 return
@@ -325,8 +390,11 @@ class RequestHandler(BaseHTTPRequestHandler):
                 json_response(self, inspect_existing_holdings(holdings, max_sector_exposure_pct=max_sector))
                 return
             if parsed.path == "/api/records/archive":
+                sym = sanitize_symbol(body.get("symbol", ""), "")
+                if not sym:
+                    raise AppError("请提供有效的标的代码。", 400)
                 snapshot = archive_recommendation_snapshot(
-                    symbol=body.get("symbol", ""),
+                    symbol=sym,
                     source_type=body.get("source_type", "manual"),
                     price=number_from(body.get("price")),
                     spy_price=number_from(body.get("spy_price")),
@@ -345,17 +413,23 @@ class RequestHandler(BaseHTTPRequestHandler):
                 json_response(self, snapshot)
                 return
             if parsed.path == "/api/watchlist/add":
+                sym = sanitize_symbol(body.get("symbol", ""), "")
+                if not sym:
+                    raise AppError("标的代码格式不合法或为空。", 400)
                 json_response(
                     self,
                     add_watchlist_symbol(
-                        body.get("symbol", ""),
+                        sym,
                         group_name=body.get("group", "默认"),
                         note=body.get("note", ""),
                     ),
                 )
                 return
             if parsed.path == "/api/watchlist/remove":
-                json_response(self, remove_watchlist_symbol(body.get("symbol", "")))
+                sym = sanitize_symbol(body.get("symbol", ""), "")
+                if not sym:
+                    raise AppError("标的代码格式不合法或为空。", 400)
+                json_response(self, remove_watchlist_symbol(sym))
                 return
 
             raise AppError("未知接口路径。", 404)

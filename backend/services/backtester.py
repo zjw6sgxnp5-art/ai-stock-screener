@@ -39,15 +39,17 @@ def fetch_yahoo_history(symbol: str, range_str: str = "2y", force_refresh: bool 
         timestamps = data.get("timestamp", [])
         quote = data.get("indicators", {}).get("quote", [{}])[0]
         closes = quote.get("close", [])
+        opens = quote.get("open", closes)
         highs = quote.get("high", closes)
         lows = quote.get("low", closes)
         volumes = quote.get("volume", [])
 
         series = {}
-        for ts, c, h, l, v in zip(timestamps, closes, highs, lows, volumes):
+        for ts, o, c, h, l, v in zip(timestamps, opens, closes, highs, lows, volumes):
             if c is not None:
                 dt_str = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
                 series[dt_str] = {
+                    "open": float(o if o is not None else c),
                     "close": float(c),
                     "high": float(h if h is not None else c),
                     "low": float(l if l is not None else c),
@@ -85,16 +87,18 @@ def run_quantitative_backtest(
     top_n: int = 3,
     max_sector_cap: float = 0.30,
     friction_pct: float = 0.001,
-    atr_mult: float = 2.5,
+    atr_mult: float = 2.0,
     force_refresh: bool = False,
 ) -> Dict[str, Any]:
     """
     Run multi-factor quantitative backtest strictly using point-in-time sliding windows.
+    Eliminates lookahead bias (executes on next open) and gap-down slippage on stops.
     """
     if not symbols:
-        symbols = ["NVDA", "MSFT", "AAPL", "AMZN", "GOOGL", "META", "TSLA", "AMD"]
+        # Diversified representative universe across Tech, Healthcare, Financials, Consumer, Energy, Industrials
+        symbols = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "JNJ", "JPM", "XOM", "PG", "CAT", "AMD", "TSLA"]
 
-    cache_key = f"backtest:{range_str}:{rebalance_freq}:{top_n}:{atr_mult}:{','.join(sorted(symbols))}"
+    cache_key = f"backtest_v2:{range_str}:{rebalance_freq}:{top_n}:{atr_mult}:{','.join(sorted(symbols))}"
     if not force_refresh:
         cached = get_cache(cache_key)
         if cached is not None:
@@ -126,9 +130,48 @@ def run_quantitative_backtest(
     last_rebalance_idx = -999
     trades_count = 0
     winning_trades = 0
+    pending_rebalance: Optional[Dict[str, Any]] = None
 
     for idx, dt in enumerate(sim_dates):
-        # A. Daily Mark-to-Market & Trailing Stop Check
+        # A. Execute Pending Orders from Previous Day's Rebalance Signal (Next-Day Open Execution - No Lookahead Bias)
+        if pending_rebalance:
+            # 1. Execute sells at Open
+            for sym in pending_rebalance.get("sells", []):
+                if sym in positions and dt in stock_data[sym]:
+                    bar = stock_data[sym][dt]
+                    open_p = bar.get("open", bar["close"])
+                    cash += positions[sym]["shares"] * open_p * (1.0 - friction_pct)
+                    pnl = (open_p - positions[sym]["entry_price"]) / positions[sym]["entry_price"]
+                    trades_count += 1
+                    if pnl > 0:
+                        winning_trades += 1
+                    del positions[sym]
+
+            # 2. Execute buys at Open
+            for buy in pending_rebalance.get("buys", []):
+                sym = buy["sym"]
+                if sym not in positions and dt in stock_data[sym]:
+                    bar = stock_data[sym][dt]
+                    open_p = bar.get("open", bar["close"])
+                    if open_p > 0:
+                        alloc = min(buy["alloc"], cash)
+                        shares = math.floor(alloc / open_p)
+                        if shares > 0:
+                            cost = shares * open_p * (1.0 + friction_pct)
+                            cash -= cost
+                            atr_val = buy.get("atr") or (open_p * 0.03)
+                            init_stop = round(open_p - atr_mult * atr_val, 2)
+                            positions[sym] = {
+                                "shares": shares,
+                                "entry_price": open_p,
+                                "highest_price": max(open_p, bar.get("high", open_p)),
+                                "initial_stop": init_stop,
+                                "stop_loss": init_stop,
+                                "atr": atr_val,
+                            }
+            pending_rebalance = None
+
+        # B. Intraday Mark-to-Market & Trailing Stop Check (Realistic Gap-Down Slippage)
         closed_syms = []
         for sym, pos in list(positions.items()):
             if dt in stock_data[sym]:
@@ -147,9 +190,11 @@ def run_quantitative_backtest(
                         if trail_stop > pos["stop_loss"]:
                             pos["stop_loss"] = trail_stop
 
-                # Trigger Stop Loss
+                # Trigger Stop Loss: if low <= stop_loss, exit at min(stop_loss, open) to penalize gap downs
                 if bar["low"] <= pos["stop_loss"]:
-                    exit_price = pos["stop_loss"]
+                    open_p = bar.get("open", bar["close"])
+                    # If opened below stop loss (gap-down), fill at open price instead of fictitious stop level
+                    exit_price = min(pos["stop_loss"], open_p)
                     cash += pos["shares"] * exit_price * (1.0 - friction_pct)
                     pnl = (exit_price - pos["entry_price"]) / pos["entry_price"]
                     trades_count += 1
@@ -158,10 +203,11 @@ def run_quantitative_backtest(
                     closed_syms.append(sym)
 
         for sym in closed_syms:
-            del positions[sym]
+            if sym in positions:
+                del positions[sym]
 
-        # B. Rebalance Window
-        if (idx - last_rebalance_idx) >= rebalance_freq:
+        # C. Rebalance Window at End-of-Day (Signals generated for next trading day)
+        if (idx - last_rebalance_idx) >= rebalance_freq and idx < len(sim_dates) - 1:
             last_rebalance_idx = idx
 
             # 1. Macro Regime via VIX (aligned with macro_service)
@@ -179,7 +225,7 @@ def run_quantitative_backtest(
                 regime = "EXTREME_VOLATILITY"
                 target_exposure = 0.0
 
-            # 2. Point-in-time scoring for candidates
+            # 2. Point-in-time scoring for candidates at close
             hist_idx = common_dates.index(dt)
             scores = []
             for sym in symbols:
@@ -217,43 +263,36 @@ def run_quantitative_backtest(
             scores.sort(key=lambda x: x["score"], reverse=True)
             ranks = {item["sym"]: r for r, item in enumerate(scores, 1)}
 
-            # 3. Hysteresis Buffer: Only eject held positions if rank > 5 (let winners run)
+            # 3. Hysteresis Buffer: plan sells for next open if rank > 5
             buffer_sell_rank = max(top_n + 2, 5)
+            sells_plan = []
             for sym in list(positions.keys()):
                 rank = ranks.get(sym, 999)
-                if rank > buffer_sell_rank and dt in stock_data[sym]:
-                    cp = stock_data[sym][dt]["close"]
-                    cash += positions[sym]["shares"] * cp * (1.0 - friction_pct)
-                    pnl = (cp - positions[sym]["entry_price"]) / positions[sym]["entry_price"]
-                    trades_count += 1
-                    if pnl > 0:
-                        winning_trades += 1
-                    del positions[sym]
+                if rank > buffer_sell_rank:
+                    sells_plan.append(sym)
 
-            # 4. Allocate capital to Top N picks (with Top 1 momentum boost)
+            # 4. Plan buys for next open
             total_equity = cash + sum(pos["shares"] * stock_data[s][dt]["close"] for s, pos in positions.items() if dt in stock_data[s])
             base_alloc = (total_equity * target_exposure) / top_n
+            buys_plan = []
 
             for r, pick in enumerate(scores[:top_n], 1):
                 sym = pick["sym"]
-                if sym not in positions:
+                if sym not in positions and sym not in sells_plan:
                     weight_mult = 1.25 if r == 1 else 1.0
                     target_alloc = min(base_alloc * weight_mult, total_equity * max_sector_cap)
-                    alloc = min(target_alloc, cash)
-                    shares = math.floor(alloc / pick["price"])
-                    if shares > 0:
-                        cost = shares * pick["price"] * (1.0 + friction_pct)
-                        cash -= cost
-                        positions[sym] = {
-                            "shares": shares,
-                            "entry_price": pick["price"],
-                            "highest_price": pick["price"],
-                            "initial_stop": round(pick["price"] - atr_mult * pick["atr"], 2),
-                            "stop_loss": round(pick["price"] - atr_mult * pick["atr"], 2),
-                            "atr": pick["atr"],
-                        }
+                    buys_plan.append({
+                        "sym": sym,
+                        "alloc": target_alloc,
+                        "atr": pick["atr"],
+                    })
 
-        # C. End-of-day equity logging
+            pending_rebalance = {
+                "sells": sells_plan,
+                "buys": buys_plan,
+            }
+
+        # D. End-of-day equity logging
         cur_val = cash + sum(pos["shares"] * stock_data[s][dt]["close"] for s, pos in positions.items() if dt in stock_data[s])
         portfolio_equity.append(round(cur_val, 2))
         benchmark_equity.append(round(initial_capital * (spy_data[dt]["close"] / spy_base_price), 2))
@@ -274,7 +313,7 @@ def run_quantitative_backtest(
 
     mdd_strat = calculate_max_drawdown(portfolio_equity)
     mdd_spy = calculate_max_drawdown(benchmark_equity)
-    calmar = abs(cagr_strat / mdd_strat) if mdd_strat < 0 else 0.0
+    calmar = (cagr_strat / abs(mdd_strat)) if mdd_strat != 0.0 else 0.0
     win_rate = (winning_trades / trades_count * 100.0) if trades_count > 0 else 0.0
 
     sampled_dates = list(sim_dates[::5])
@@ -320,8 +359,9 @@ def run_quantitative_backtest(
             "years": round(years, 2),
         },
         "performance": perf_dict,
-        "strategy_type": "动量相对强弱与 ATR 跟踪止损量化轮动 (纯量价策略)",
-        "disclaimer": "⚠️ 严肃买方准则说明：本历史回测仅使用日频量价历史（20日相对强弱 RS + 60日趋势 + 2.5xATR 跟踪止损 + VIX 仓位控制），未接入历史截面财务与现金流（长桥仅提供最新单期快照），故本回测收益仅代表动量轮动历史表现，绝不能作为长线基本面多因子评分或档案结论的历史业绩背书！",
+        "strategy_type": "动量相对强弱与 2xATR 跟踪止损量化轮动 (严格次日开盘执行)",
+        "disclaimer": "⚠️ 严肃买方准则说明：本历史回测严格采用【次日开盘执行】（杜绝同日收盘未来函数）与【跳空低开滑点成交】（低开跌破止损线以开盘价成交）。固定历史标的池存在幸存者偏差，低胜率与跑输基准反映了动量策略在震荡市频繁止损的摩擦成本，绝不作为实盘收益承诺！",
+        "survivorship_disclaimer": "固定历史标的池存在幸存者偏差；量化回测仅验证量价动量与2xATR跟踪止损防线，未接入历史财报截面。",
         "equity_curve": equity_curve_list,
         "raw_equity_curve": {
             "dates": sampled_dates,

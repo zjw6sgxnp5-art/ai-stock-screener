@@ -1394,19 +1394,29 @@ def export_markdown_report(symbol: str) -> Dict[str, Any]:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     path = REPORTS_DIR / f"{symbol.replace('.', '-')}-{timestamp}.md"
     
-    quote = payload.get("quote", {})
-    score = payload.get("score", {})
+    quote = payload.get("quote") or {}
+    score = payload.get("score") or {}
+    score_val = score.get("score")
+    score_display = f"{score_val} / 100 ({score.get('verdict', '未评级')})" if score_val is not None else "数据不足，未评级"
+
     content = f"""# {symbol} 本地投研简报
 
-- 生成时间: {payload.get('generated_at')}
-- 最新价: {quote.get('last')}
-- 涨跌幅: {quote.get('change_pct')}%
-- 综合评分: {score.get('score')} / 100 ({score.get('verdict')})
+- 生成时间: {payload.get('generated_at', utc_now_iso())}
+- 最新价: {quote.get('last', '--')}
+- 涨跌幅: {quote.get('change_pct', '--')}%
+- 综合评分: {score_display}
 
 ## 因子归因
 """
-    for f in score.get("factor_breakdown", {}).get("factors", []):
-        content += f"- **{f['name']}** ({f['score']}分): {' / '.join(f.get('evidence', []))}\n"
+    fb = score.get("factor_breakdown") or {}
+    factors = fb.get("factors") or []
+    if factors:
+        for f in factors:
+            evidence = f.get('evidence') or []
+            ev_str = ' / '.join(str(e) for e in evidence) if evidence else "无额外佐证"
+            content += f"- **{f.get('name', '因子')}** ({f.get('score', 0)}分): {ev_str}\n"
+    else:
+        content += "- *当前模式下无量化因子明细（长桥官方财务离线或数据不足，遵循不伪造数据原则未生成因子细项）*\n"
     
     path.write_text(content, encoding="utf-8")
     return {

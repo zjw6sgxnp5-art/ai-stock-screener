@@ -4,10 +4,15 @@ Unit tests for multi-factor screener gates and scoring attribution.
 import unittest
 
 from backend.core.financial import build_factor_breakdown
+from backend.db import ensure_db
 from backend.services.screener import is_liquidity_passed, is_trend_passed
 
 
 class TestScreenerGates(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ensure_db()
+
     def test_liquidity_gate_rules(self):
         # Criteria: turnover >= $300M or volume >= 800k
         liquid_cases = [

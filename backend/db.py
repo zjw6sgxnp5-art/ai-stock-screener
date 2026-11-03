@@ -12,11 +12,15 @@ from backend.config import DB_PATH, AppError
 from backend.core.utils import number_from, utc_now_iso
 
 DB_LOCK = threading.RLock()
+_INITIALIZED_DBS = set()
 
 
 @contextmanager
 def get_db():
     """Ensure SQLite database connections are cleanly closed upon context exit."""
+    db_key = str(DB_PATH)
+    if db_key not in _INITIALIZED_DBS:
+        ensure_db()
     conn = sqlite3.connect(DB_PATH)
     try:
         yield conn
@@ -28,6 +32,7 @@ def ensure_db() -> None:
     """Ensure database schema is created and upgraded with automated migrations."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with DB_LOCK:
+        _INITIALIZED_DBS.add(str(DB_PATH))
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
                 """

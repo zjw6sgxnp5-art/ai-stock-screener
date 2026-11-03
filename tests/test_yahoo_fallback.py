@@ -3,6 +3,7 @@ Unit tests for Yahoo Finance resilient data fallback service.
 """
 import unittest
 
+from backend.db import ensure_db
 from backend.services.market_data import (
     fetch_yahoo_klines,
     fetch_yahoo_quotes_batch,
@@ -11,6 +12,10 @@ from backend.services.market_data import (
 
 
 class TestYahooFallback(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ensure_db()
+
     def test_fetch_yahoo_quotes_batch(self):
         # Batch fetch for 2 mainstream symbols
         symbols = ["AAPL.US", "MSFT.US"]

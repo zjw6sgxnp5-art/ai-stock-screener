@@ -16,9 +16,24 @@ def clamp(value: float, lower: float = 0.0, upper: float = 100.0) -> float:
     return max(lower, min(upper, value))
 
 
+_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9.\-^]{1,20}$")
+
+
+def is_valid_symbol(symbol: Any) -> bool:
+    """Validate stock symbol format (letters, digits, dot, hyphen, caret)."""
+    if not symbol or not isinstance(symbol, str):
+        return False
+    clean = symbol.strip().upper()
+    return bool(_SYMBOL_PATTERN.match(clean))
+
+
 def normalize_symbol(symbol: str) -> str:
-    """Normalize stock symbol to UPPERCASE.US format."""
+    """Normalize stock symbol to UPPERCASE.US format after removing illegal characters."""
     sym = (symbol or "").strip().upper()
+    if not sym:
+        return ""
+    # Strip any dangerous characters (e.g. paths, quotes, shell separators)
+    sym = re.sub(r"[^A-Z0-9.\-^]", "", sym)
     if not sym:
         return ""
     if not (sym.endswith(".US") or sym.endswith(".HK") or sym.endswith(".SH") or sym.endswith(".SZ")):
@@ -37,7 +52,7 @@ def parse_symbol_list(raw: str, default: Optional[List[str]] = None, max_count: 
         if not item:
             continue
         cleaned = normalize_symbol(item)
-        if cleaned and cleaned not in results:
+        if cleaned and is_valid_symbol(cleaned) and cleaned not in results:
             results.append(cleaned)
         if len(results) >= max_count:
             break

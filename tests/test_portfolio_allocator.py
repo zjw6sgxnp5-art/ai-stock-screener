@@ -3,6 +3,7 @@ Unit tests for ATR risk parity portfolio allocation and sector cap constraints.
 """
 import unittest
 
+from backend.db import ensure_db
 from backend.services.portfolio_allocator import (
     calculate_portfolio_allocation,
     estimate_atr,
@@ -12,11 +13,15 @@ from backend.services.portfolio_allocator import (
 
 
 class TestPortfolioAllocator(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ensure_db()
+
     def test_inspect_existing_holdings(self):
         holdings = [
-            {"symbol": "NVDA.US", "shares": 100},
-            {"symbol": "AMD.US", "shares": 500},
-            {"symbol": "AAPL.US", "shares": 50},
+            {"symbol": "NVDA.US", "shares": 100, "current_price": 130.0},
+            {"symbol": "AMD.US", "shares": 500, "current_price": 160.0},
+            {"symbol": "AAPL.US", "shares": 50, "current_price": 220.0},
         ]
         report = inspect_existing_holdings(holdings, max_sector_exposure_pct=30.0)
         self.assertTrue(report["ok"])

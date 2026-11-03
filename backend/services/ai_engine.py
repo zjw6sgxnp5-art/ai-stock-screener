@@ -183,11 +183,24 @@ def run_cli_model(model_name: str, prompt: str, timeout: int = 50) -> Dict[str, 
 def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict[str, Any]:
     """Execute end-to-end AI reasoning and automatically archive into SQLite snapshots."""
     bundle = fetch_stock_bundle(symbol, include_ai=False, include_extra=True)
-    quote = bundle.get("quote", {})
-    technical = bundle.get("technical", {})
-    valuation = bundle.get("valuation", {})
-    financials = bundle.get("financials", {})
-    score = bundle.get("score", {})
+    quote = bundle.get("quote") or {}
+    technical = bundle.get("technical") or {}
+    valuation = bundle.get("valuation") or {}
+    financials = bundle.get("financials") or {}
+    score = bundle.get("score") or {}
+    score_val = score.get("score")
+    score_display = f"{score_val} / 100 ({score.get('verdict', '未评级')})" if score_val is not None else "数据不足，未评级"
+    
+    rating_data = bundle.get("rating") or {}
+    risk_radar = bundle.get("risk_radar") or {}
+    short_pos = risk_radar.get("short_positions") or {}
+    if isinstance(short_pos, dict):
+        short_latest = short_pos.get("latest") or {}
+    elif isinstance(short_pos, list) and short_pos:
+        short_latest = short_pos[0] if isinstance(short_pos[0], dict) else {}
+    else:
+        short_latest = {}
+
     macro = get_macro_climate()
     regime_info = macro.get('regime', {})
     regime_name = regime_info.get('level', '顺风进攻期')
@@ -211,10 +224,10 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
 【个股实时核心事实与量化指标】
 - 最新价: ${quote.get('last')} (涨跌幅: {quote.get('change_pct')}%)
 - 均线与动量: {technical.get('trend_label')}, RSI14={technical.get('rsi14')}, 20日年化波动率={technical.get('volatility_20d')}%, ATR(14)={technical.get('atr14')}
-- 估值与评级: PE={valuation.get('pe_raw')}, PS={valuation.get('ps_raw')}, PB={valuation.get('pb_raw')}, 机构建议={bundle.get('rating', {}).get('recommend')}, 平均目标价=${bundle.get('rating', {}).get('target')}
+- 估值与评级: PE={valuation.get('pe_raw')}, PS={valuation.get('ps_raw')}, PB={valuation.get('pb_raw')}, 机构建议={rating_data.get('recommend', '--')}, 平均目标价=${rating_data.get('target', '--')}
 - 财务指标 (已披露真实快照): {json.dumps(financials.get('indicators', [])[:5], ensure_ascii=False)}
-- 做空与筹码: 做空比例={bundle.get('risk_radar', {}).get('short_positions', {}).get('latest', {}).get('short_rate')}, Days to cover={bundle.get('risk_radar', {}).get('short_positions', {}).get('latest', {}).get('days_to_cover')}
-- 本地量化综合评分: {score.get('score')} / 100 ({score.get('verdict')})
+- 做空与筹码: 做空比例={short_latest.get('short_rate', '--')}, Days to cover={short_latest.get('days_to_cover', '--')}
+- 本地量化综合评分: {score_display}
 
 请分 4 个核心模块输出结构化买方决策研报：
 
@@ -242,9 +255,10 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
     p = quote.get("last")
     atr_stop = technical.get("trailing_stop_2atr")
     stop_loss = atr_stop if atr_stop else (round(p * 0.93, 2) if p else None)
-    raw_target = bundle.get("rating", {}).get("target")
+    raw_target = rating_data.get("target")
     target_p = round(float(raw_target), 2) if (raw_target and float(raw_target) > 0) else None
-    tags = bundle.get("score", {}).get("positives", [])[:3]
+    tags = (bundle.get("score") or {}).get("positives") or []
+    tags = tags[:3]
 
     snapshot_id = None
     if ai_result.get("ok") and p and p > 0:

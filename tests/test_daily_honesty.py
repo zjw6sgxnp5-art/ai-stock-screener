@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+from backend.db import ensure_db
 from backend.services.company_kb import infer_dynamic_institutional_dossier
 from backend.services.screener import get_daily_screener_recommendations, verdict_for_score
 
@@ -40,6 +41,10 @@ def _candidate(symbol, score, status="LIVE"):
 
 
 class TestDailyHonesty(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ensure_db()
+
     def test_missing_score_is_not_a_rating(self):
         self.assertEqual(verdict_for_score(None), "数据不足，不能评级")
         self.assertEqual(verdict_for_score(58), "中性观察")
