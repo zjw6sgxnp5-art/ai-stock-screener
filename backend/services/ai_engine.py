@@ -202,10 +202,10 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
         short_latest = {}
 
     macro = get_macro_climate()
-    regime_info = macro.get('regime', {})
+    regime_info = (macro.get('regime') or {})
     regime_name = regime_info.get('level', '顺风进攻期')
     regime_code = regime_info.get('code', 'RISK_ON')
-    factor_matrix = regime_info.get('factor_matrix', {})
+    factor_matrix = (regime_info.get('factor_matrix') or {})
 
     prompt = f"""
 你是一名顶级美股对冲基金的投研总监与量化风险官。请基于以下严格结构化证据，针对股票【{symbol}】给出高密度、不讲空话、区分周期的买方决策研判。
@@ -216,16 +216,16 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
 4. 组合行业敞口上限（单一行业 ≤30%）与 ATR(14) 风险平价仓位及防守纪律（系统未接入期权链，严禁捏造期权合约）
 
 【宏观离散状态机 (Market Regime State Machine)】
-- 标普 500 (SPY): {macro.get('spy', {}).get('last')} ({macro.get('spy', {}).get('change_pct')}%)
-- 恐慌指数 (VIX): {macro.get('vix', {}).get('last')}
+- 标普 500 (SPY): {(macro.get('spy') or {}).get('last')} ({(macro.get('spy') or {}).get('change_pct')}%)
+- 恐慌指数 (VIX): {(macro.get('vix') or {}).get('last')}
 - 状态机离散判定: 【{regime_code} - {regime_name}】 (建议总仓位: {regime_info.get('suggested_exposure')})
-- 当前激活因子权重: {json.dumps(factor_matrix.get('weights', {}), ensure_ascii=False)}
+- 当前激活因子权重: {json.dumps((factor_matrix.get('weights') or {}), ensure_ascii=False)}
 
 【个股实时核心事实与量化指标】
 - 最新价: ${quote.get('last')} (涨跌幅: {quote.get('change_pct')}%)
 - 均线与动量: {technical.get('trend_label')}, RSI14={technical.get('rsi14')}, 20日年化波动率={technical.get('volatility_20d')}%, ATR(14)={technical.get('atr14')}
 - 估值与评级: PE={valuation.get('pe_raw')}, PS={valuation.get('ps_raw')}, PB={valuation.get('pb_raw')}, 机构建议={rating_data.get('recommend', '--')}, 平均目标价=${rating_data.get('target', '--')}
-- 财务指标 (已披露真实快照): {json.dumps(financials.get('indicators', [])[:5], ensure_ascii=False)}
+- 财务指标 (已披露真实快照): {json.dumps((financials.get('indicators') or [])[:5], ensure_ascii=False)}
 - 做空与筹码: 做空比例={short_latest.get('short_rate', '--')}, Days to cover={short_latest.get('days_to_cover', '--')}
 - 本地量化综合评分: {score_display}
 
@@ -262,9 +262,9 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
 
     snapshot_id = None
     if ai_result.get("ok") and p and p > 0:
-        spy_last = macro.get("spy", {}).get("last")
+        spy_last = (macro.get("spy") or {}).get("last")
         spy_val = spy_last if (spy_last and spy_last > 0) else None
-        vix_last = macro.get("vix", {}).get("last")
+        vix_last = (macro.get("vix") or {}).get("last")
         vix_val = vix_last if (vix_last and vix_last > 0) else None
         snapshot = archive_recommendation_snapshot(
             symbol=symbol,
@@ -276,8 +276,8 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
             verdict=score.get("verdict", "中性观察"),
             tags=tags,
             short_term_thesis=f"当前量化评分 {score.get('score')}，重点盯防止损线 ${stop_loss}" if stop_loss else f"当前量化评分 {score.get('score')}",
-            mid_term_thesis=macro.get("regime", {}).get("level", "顺风进攻期"),
-            long_term_thesis=bundle.get("company", {}).get("name", symbol),
+            mid_term_thesis=(macro.get("regime") or {}).get("level", "顺风进攻期"),
+            long_term_thesis=(bundle.get("company") or {}).get("name", symbol),
             stop_loss_price=stop_loss,
             target_price=target_p,
             ai_model=f"{model_name.upper()} CLI",
@@ -290,6 +290,8 @@ def run_cli_analysis_for_symbol(symbol: str, model_name: str = "gemini") -> Dict
         "symbol": symbol,
         "model": model_name,
         "ai_analysis": ai_result.get("text", ""),
+        "review_status": "AI_GENERATED" if ai_result.get("ok") else "PENDING_REVIEW",
+        "rating_label": "AI 研判已生成" if ai_result.get("ok") else "待人工复核（大模型未配置或未返回有效研判）",
         "bundle": bundle,
         "snapshot_id": snapshot_id,
         "timestamp": utc_now_iso(),
@@ -311,26 +313,26 @@ def generate_long_term_memo(
     3. 12-Month Catalysts & Milestones Checklist
     4. Resilient Buy-Side Memo Markdown (Dual-Model synthesis with zero-failure deterministic fallback)
     """
-    quote = bundle.get("quote", {})
+    quote = (bundle.get("quote") or {})
     p = quote.get("last") or 0.0
-    company = bundle.get("company", {})
+    company = (bundle.get("company") or {})
     cname = company.get("name") or company.get("company_name") or symbol
-    technical = bundle.get("technical", {})
-    financials = bundle.get("financials", {})
+    technical = (bundle.get("technical") or {})
+    financials = (bundle.get("financials") or {})
     
     val_status = valuation_data.get("status") if valuation_data else "评估中"
     margin_pct = valuation_data.get("margin_of_safety_pct") if valuation_data else 0.0
-    reverse_dcf = valuation_data.get("reverse_dcf", {}) if valuation_data else {}
+    reverse_dcf = (valuation_data.get("reverse_dcf") or {}) if valuation_data else {}
     implied_g = reverse_dcf.get("implied_annual_growth_pct", 15.0)
     fair_mid = valuation_data.get("fair_value_mid") if valuation_data else None
 
     # Ladder & Technials
-    ladder = technical.get("price_ladder", {})
+    ladder = (technical.get("price_ladder") or {})
     # 1. Honest Buy-Side Evaluation Baseline
-    ladder = technical.get("price_ladder", {})
-    s1_price = ladder.get("s1_near", {}).get("price") or technical.get("ma20") or round(p * 0.95, 2)
-    s2_stop = ladder.get("s2_defense", {}).get("price") or technical.get("trailing_stop_2atr") or round(p * 0.88, 2)
-    r1_price = ladder.get("r1_near", {}).get("price") or round(p * 1.05, 2)
+    ladder = (technical.get("price_ladder") or {})
+    s1_price = (ladder.get("s1_near") or {}).get("price") or technical.get("ma20") or round(p * 0.95, 2)
+    s2_stop = (ladder.get("s2_defense") or {}).get("price") or technical.get("trailing_stop_2atr") or round(p * 0.88, 2)
+    r1_price = (ladder.get("r1_near") or {}).get("price") or round(p * 1.05, 2)
 
     # 2. Extract Business Facts
     essence_raw = (products_data or {}).get("essence", "公司主营业务")

@@ -1,3 +1,4 @@
+import _testdb  # noqa: F401
 """
 Unit tests for technical indicators in backend/core/indicators.py.
 """

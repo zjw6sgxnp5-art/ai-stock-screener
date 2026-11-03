@@ -99,13 +99,13 @@ def longbridge_status() -> Dict[str, Any]:
         if completed.returncode == 0 and completed.stdout:
             try:
                 data = json.loads(completed.stdout)
-                token_status = data.get("token", {}).get("status")
+                token_status = (data.get("token") or {}).get("status")
                 if token_status == "valid":
                     res = {
                         "ok": True,
                         "authenticated": True,
                         "binary": LONG_BRIDGE_BIN,
-                        "member_id": data.get("account", {}).get("member_id"),
+                        "member_id": (data.get("account") or {}).get("member_id"),
                         "message": "长桥 CLI 认证有效，实时行情流已连接",
                     }
                     set_cache("longbridge:auth:check", res, 60)
@@ -262,12 +262,12 @@ def fetch_yahoo_quotes_batch(symbols: List[str], timeout: int = 8) -> Dict[str, 
         try:
             resp = urllib.request.urlopen(req, context=ctx, timeout=timeout)
             payload = json.loads(resp.read().decode("utf-8"))
-            chart_res = payload.get("chart", {}).get("result", [])
+            chart_res = (payload.get("chart") or {}).get("result", [])
             if not chart_res:
                 return None
             data = chart_res[0]
-            meta = data.get("meta", {})
-            quote_data = data.get("indicators", {}).get("quote", [{}])[0]
+            meta = (data.get("meta") or {})
+            quote_data = (data.get("indicators") or {}).get("quote", [{}])[0]
             closes = [c for c in quote_data.get("close", []) if c is not None]
             last = meta.get("regularMarketPrice") or (closes[-1] if closes else None)
             if not last:
@@ -324,12 +324,12 @@ def fetch_yahoo_klines(symbol: str, count: int = 260) -> List[Dict[str, Any]]:
     try:
         resp = urllib.request.urlopen(req, context=ctx, timeout=10)
         payload = json.loads(resp.read().decode("utf-8"))
-        chart_res = payload.get("chart", {}).get("result", [])
+        chart_res = (payload.get("chart") or {}).get("result", [])
         if not chart_res:
             return []
         data = chart_res[0]
         timestamps = data.get("timestamp", [])
-        quote_indicators = data.get("indicators", {}).get("quote", [{}])[0]
+        quote_indicators = (data.get("indicators") or {}).get("quote", [{}])[0]
         closes = quote_indicators.get("close", [])
         opens = quote_indicators.get("open", closes)
         highs = quote_indicators.get("high", closes)

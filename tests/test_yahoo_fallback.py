@@ -1,3 +1,4 @@
+import _testdb  # noqa: F401
 """
 Unit tests for Yahoo Finance resilient data fallback service.
 """

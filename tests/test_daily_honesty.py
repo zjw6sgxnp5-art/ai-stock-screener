@@ -1,3 +1,4 @@
+import _testdb  # noqa: F401
 """Honesty checks for the daily gate, missing scores, and non-preset dossiers."""
 import unittest
 from datetime import datetime, timezone

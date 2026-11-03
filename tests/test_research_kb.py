@@ -1,3 +1,4 @@
+import _testdb  # noqa: F401
 """
 Unit tests for Research Knowledge Base (Benchmark V4 + User S&P 500).
 """
