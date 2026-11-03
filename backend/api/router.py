@@ -119,6 +119,49 @@ class RequestHandler(BaseHTTPRequestHandler):
                 from backend.core.stock_registry import get_all_registered_stocks
                 json_response(self, {"ok": True, "stocks": get_all_registered_stocks()})
                 return
+            if parsed.path == "/api/research/list":
+                from backend.services.research_kb import query_research_list
+                params = parse_qs(parsed.query)
+                source = params.get("source", ["benchmark"])[0]
+                query = params.get("query", [""])[0]
+                sector = params.get("sector", [""])[0]
+                rating = params.get("rating", [""])[0]
+                sort_by = params.get("sort_by", [""])[0]
+                order = params.get("order", ["desc"])[0]
+                
+                # Support both limit/offset and page/page_size pagination
+                page = int(params.get("page", ["1"])[0] or 1)
+                page_size = int(params.get("page_size", ["0"])[0] or 0)
+                if page_size > 0:
+                    limit = max(1, min(page_size, 600))
+                    offset = max(0, (page - 1) * limit)
+                else:
+                    limit = int(params.get("limit", ["50"])[0] or 50)
+                    offset = int(params.get("offset", ["0"])[0] or 0)
+
+                json_response(self, query_research_list(
+                    source=source,
+                    query=query,
+                    sector=sector,
+                    rating=rating,
+                    sort_by=sort_by,
+                    order=order,
+                    limit=max(1, min(limit, 600)),
+                    offset=max(0, offset),
+                ))
+                return
+            if parsed.path == "/api/research/detail":
+                from backend.services.research_kb import get_stock_research_detail
+                params = parse_qs(parsed.query)
+                symbol = params.get("symbol", ["AAPL"])[0]
+                json_response(self, get_stock_research_detail(symbol))
+                return
+            if parsed.path == "/api/research/report":
+                from backend.services.research_kb import get_stock_markdown_report
+                params = parse_qs(parsed.query)
+                symbol = params.get("symbol", ["AAPL"])[0]
+                json_response(self, get_stock_markdown_report(symbol))
+                return
             if parsed.path == "/api/tech/catalysts":
                 json_response(self, {
                     "ok": True,

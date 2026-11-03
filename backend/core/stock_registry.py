@@ -166,8 +166,59 @@ def get_daily_core_symbols() -> List[str]:
     return symbols
 
 
+_ALL_STOCKS_CACHE: Optional[List[Dict[str, Any]]] = None
+
+
 def get_all_registered_stocks() -> List[Dict[str, Any]]:
-    """List all registered stocks for frontend autocomplete and pool discovery."""
+    """
+    List all 518 S&P 500 + Nasdaq 100 universe stocks for universal top nav search,
+    autocomplete, and pool discovery.
+    """
+    global _ALL_STOCKS_CACHE
+    if _ALL_STOCKS_CACHE:
+        return _ALL_STOCKS_CACHE
+
+    try:
+        from backend.services.research_kb import get_all_benchmark_stocks
+        b_stocks = get_all_benchmark_stocks()
+        if b_stocks:
+            res = []
+            for item in b_stocks:
+                ticker = item["ticker"]
+                meta = _REGISTRY_DATA.get(ticker, {})
+                zh = item.get("name_cn") or meta.get("name_zh") or ticker
+                en = item.get("name_en") or meta.get("name_en") or ticker
+                sec = item.get("sector") or meta.get("sector") or "其他综合"
+                sub = item.get("sub_industry") or ""
+                idx = item.get("index_code") or "SP500"
+                beta = meta.get("beta", 1.0)
+                is_core = meta.get("is_daily_core", False)
+                res.append({
+                    "ticker": ticker,
+                    "symbol": f"{ticker}.US",
+                    "name_zh": zh,
+                    "name_en": en,
+                    "sector": sec,
+                    "sub_industry": sub,
+                    "index_code": idx,
+                    "rating": item.get("rating"),
+                    "total_score": item.get("total_score"),
+                    "target_upside": item.get("target_upside"),
+                    "price": item.get("price"),
+                    "beta": beta,
+                    "is_daily_core": is_core,
+                })
+                # Dynamically ensure COMPANY_NAMES_ZH and STOCK_SECTOR_MAP are populated
+                COMPANY_NAMES_ZH[ticker] = zh
+                COMPANY_NAMES_ZH[f"{ticker}.US"] = zh
+                if ticker not in STOCK_SECTOR_MAP:
+                    STOCK_SECTOR_MAP[ticker] = {"sector": sec, "beta": beta, "iv_rank": 50}
+                    STOCK_SECTOR_MAP[f"{ticker}.US"] = {"sector": sec, "beta": beta, "iv_rank": 50}
+            _ALL_STOCKS_CACHE = res
+            return res
+    except Exception:
+        pass
+
     result = []
     for ticker, meta in sorted(_REGISTRY_DATA.items()):
         result.append({

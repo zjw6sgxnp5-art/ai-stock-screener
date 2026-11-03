@@ -50,6 +50,11 @@
           <span class="tab-icon">💼</span>
           <span>组合风控配置</span>
         </button>
+        <button type="button" class="global-nav-tab" data-view="researchSection">
+          <span class="tab-icon">📚</span>
+          <span>权威投研文库</span>
+          <span class="nav-tab-pill">双库·518标的</span>
+        </button>
       </nav>
 
       <!-- 顶栏快速搜索入口 (Rule 2: 搜索放在顶栏，回车仍进档案) -->
@@ -220,6 +225,44 @@
           </button>
         </div>
       </header>
+
+      <!-- 双重视角投研看板 (方案 A: 外部全景研判 vs 我的买方避雷研判) -->
+      <section class="dossier-perspectives-panel" id="dossierPerspectivesPanel">
+        <div class="perspectives-bar">
+          <div class="perspectives-info">
+            <span class="persp-icon">🎯</span>
+            <div class="persp-labels">
+              <div class="persp-title-row">
+                <span class="persp-title">基准投研双重视角联动</span>
+                <span id="perspStockBadge" class="persp-badge">标普500 + 纳指100</span>
+              </div>
+              <p id="perspSubText" class="persp-sub">双库交叉印证 · 外部评级与个人避雷研判随时对照</p>
+            </div>
+          </div>
+          <div class="perspectives-controls">
+            <div class="persp-switch-group" id="perspTabsSwitch">
+              <button type="button" class="persp-switch-btn active" id="btnPerspBenchmark" data-persp="benchmark" title="查看 518 篇全景投研与 30 分制六维评分">
+                <span class="icon">📊</span>
+                <span>外部机构全景研判</span>
+                <span class="persp-tag" id="perspBenchmarkRatingTag">--</span>
+              </button>
+              <button type="button" class="persp-switch-btn" id="btnPerspUser" data-persp="user" title="查看个人买方避雷评级、错杀机会与证伪触发线">
+                <span class="icon">🛡️</span>
+                <span>我的买方避雷研判</span>
+                <span class="persp-tag" id="perspUserRatingTag">--</span>
+              </button>
+            </div>
+            <button type="button" class="btn-read-report" id="btnReadStockReport" title="阅读 518 篇独家深度研报全文">
+              <span class="icon">📖</span>
+              <span>查看深度研报全文</span>
+            </button>
+          </div>
+        </div>
+        <!-- 视角卡片内容展示区 -->
+        <div class="perspective-content-card" id="perspectiveContentCard">
+          <div class="persp-placeholder">加载中...</div>
+        </div>
+      </section>
 
       <!-- 专题卡片导航条 (Rule P1 10: 档案先给数字，默认落在估值与财务) -->
       <nav class="topic-tabs-bar" id="topicTabsBar">
@@ -826,6 +869,121 @@
     </div>
   </div>
 
+    <!-- 6. 权威投研文库主区域 (Research Library Section) -->
+    <div id="researchSection" class="workbench-section" style="display: none;">
+      <div class="research-page-container">
+        <!-- 头部导引与数据源切换 Tab -->
+        <header class="research-header">
+          <div class="research-header-top">
+            <div class="research-title-box">
+              <div class="research-title-row">
+                <span class="research-icon">📚</span>
+                <h2 class="research-title">权威投研文库</h2>
+                <span class="research-badge-pill" id="researchActiveSourceBadge">标普500 + 纳指100 · 518 只标的</span>
+              </div>
+              <p class="research-subtitle">
+                双源交叉印证：汇聚美股全景 30 分制六维机构评级与买方避雷研判，配套 518 篇 Markdown 深度研报全文
+              </p>
+            </div>
+            <div class="research-header-stats">
+              <div class="header-stat-box">
+                <span class="stat-lbl">文库总收录</span>
+                <strong class="stat-num" id="statTotalStocks">518</strong>
+              </div>
+              <div class="header-stat-box">
+                <span class="stat-lbl">深度研报数</span>
+                <strong class="stat-num text-success" id="statReportCount">518 篇</strong>
+              </div>
+              <div class="header-stat-box">
+                <span class="stat-lbl">避雷防线库</span>
+                <strong class="stat-num text-accent" id="statUserCount">506 期</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- 双数据源切换 Tab 按钮 (默认显示美股全景投研库) -->
+          <div class="research-source-tabs" id="researchSourceTabs">
+            <button type="button" class="source-tab-btn active" id="btnSourceBenchmark" data-source="benchmark">
+              <div class="tab-btn-content">
+                <div class="tab-btn-header">
+                  <span class="tab-icon">📊</span>
+                  <span class="tab-name">美股全景投研库</span>
+                  <span class="tab-tag tag-primary">默认 · 518 只标的</span>
+                </div>
+                <div class="tab-btn-desc">标普500 + 纳指100 · 30分六维评分 · 518篇Markdown研报 · 目标价与分笔操作</div>
+              </div>
+            </button>
+            <button type="button" class="source-tab-btn" id="btnSourceUser" data-source="user">
+              <div class="tab-btn-content">
+                <div class="tab-btn-header">
+                  <span class="tab-icon">🛡️</span>
+                  <span class="tab-name">标普500避雷研究库</span>
+                  <span class="tab-tag tag-accent">买方自研 · 506 期记录</span>
+                </div>
+                <div class="tab-btn-desc">标普500成分股 · 避雷四级评级 · 错杀机会识别 · 独家证伪触发线 · 估值水位</div>
+              </div>
+            </button>
+          </div>
+        </header>
+
+        <!-- 筛选与搜索控制栏 -->
+        <div class="research-filter-bar">
+          <div class="filter-controls-left">
+            <div class="research-search-input-wrap">
+              <span class="search-icon">🔍</span>
+              <input
+                type="text"
+                id="researchSearchInput"
+                class="research-search-input"
+                placeholder="搜索代码 (如 AAPL) 或公司名 (如 苹果、微软)..."
+              />
+              <button type="button" id="btnClearResearchSearch" class="btn-clear-search" style="display:none;">✕</button>
+            </div>
+
+            <div class="filter-select-group">
+              <label for="researchSectorFilter" class="filter-label">行业分类：</label>
+              <select id="researchSectorFilter" class="research-select">
+                <option value="">全部行业板块</option>
+              </select>
+            </div>
+
+            <div class="filter-select-group">
+              <label for="researchSortBy" class="filter-label">排序方式：</label>
+              <select id="researchSortBy" class="research-select">
+                <option value="total_score_desc">综合评分最高 ➔ 最低</option>
+                <option value="upside_desc">目标上涨空间最高 ➔ 最低</option>
+                <option value="pe_asc">PE 估值最低 ➔ 最高</option>
+                <option value="ticker_asc">代码 A ➔ Z</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="filter-controls-right">
+            <span class="filter-result-count" id="researchResultCount">正在检索标的...</span>
+            <button type="button" id="btnResetResearchFilters" class="btn-ghost-sm" title="重置全部筛选">重置筛选</button>
+          </div>
+        </div>
+
+        <!-- 快捷评级药丸过滤 -->
+        <div class="research-rating-pills" id="researchRatingPills">
+          <!-- 动态注入评级按钮 -->
+        </div>
+
+        <!-- 标的卡片网格 -->
+        <div class="research-cards-grid" id="researchCardsGrid">
+          <div class="research-loading-placeholder">
+            <div class="spinner-pulsar-sm"></div>
+            <span>正在加载投研文库标的...</span>
+          </div>
+        </div>
+
+        <!-- 分页控制器 -->
+        <div class="research-pagination" id="researchPagination" style="display: none;">
+          <!-- 动态渲染分页 -->
+        </div>
+      </div>
+    </div>
+
     <!-- 3. 历史记录模态抽屉 (History Modal / Drawer) -->
     <div id="historyModal" class="modal-overlay" style="display: none;">
       <div class="modal-drawer">
@@ -908,6 +1066,46 @@
         <div class="tray-actions">
           <button type="button" id="btnLaunchCompare" class="btn-primary-sm">立即横向对比</button>
           <button type="button" id="btnClearCompare" class="btn-ghost-sm">清空</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. Markdown 深度研报全文阅读弹窗 (Markdown Report Reader Modal) -->
+    <div id="researchReportModal" class="modal-overlay" style="display: none;">
+      <div class="modal-report-dialog">
+        <header class="modal-report-header">
+          <div class="report-header-left">
+            <span class="report-header-icon">📖</span>
+            <div class="report-header-meta">
+              <div class="report-header-title-row">
+                <h3 id="reportModalStockName" class="report-stock-name">Apple Inc.</h3>
+                <span id="reportModalStockSymbol" class="report-stock-symbol">AAPL.US</span>
+                <span id="reportModalRatingBadge" class="report-rating-badge">强推 (26分)</span>
+                <span id="reportModalUniverseTag" class="report-universe-tag">标普500+纳指100</span>
+              </div>
+              <p id="reportModalSubtitle" class="report-modal-sub">外部机构长线深度研报全文 · 六维量化诊断与分步操作指南</p>
+            </div>
+          </div>
+          <div class="report-header-actions">
+            <button type="button" id="btnJumpToReportDossier" class="btn-secondary-sm" title="直达此股票的完整深度档案">
+              <span>进入深度档案 ➔</span>
+            </button>
+            <button type="button" id="btnCopyReportMarkdown" class="btn-ghost-sm" title="复制 Markdown 全文源码">
+              <span class="icon">📋</span>
+              <span id="btnCopyReportText">复制研报</span>
+            </button>
+            <button type="button" id="btnCloseReportModal" class="btn-close-modal" title="关闭窗口 (Esc)">✕</button>
+          </div>
+        </header>
+
+        <div class="modal-report-body" id="reportModalBody">
+          <div class="report-loading-state" id="reportLoadingState">
+            <div class="spinner-pulsar-sm"></div>
+            <span>正在调阅 518 篇个股研报全文库...</span>
+          </div>
+          <div class="markdown-article-container" id="reportMarkdownContainer" style="display: none;">
+            <!-- 动态渲染 Markdown -->
+          </div>
         </div>
       </div>
     </div>

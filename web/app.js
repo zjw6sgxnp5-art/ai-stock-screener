@@ -27,7 +27,16 @@ const state = {
     { symbol: "NVDA.US", shares: 100 },
     { symbol: "AAPL.US", shares: 120 },
     { symbol: "MSFT.US", shares: 80 }
-  ]
+  ],
+  // Research Library State (Rule 1 & Rule 3: 双库518标的及视角)
+  researchSource: "benchmark", // "benchmark" (默认美股全景投研库) | "user" (标普500避雷研究库)
+  researchQuery: "",
+  researchSector: "",
+  researchRating: "",
+  researchSortBy: "total_score_desc",
+  researchPage: 1,
+  researchPageSize: 12,
+  activeDossierPerspective: "benchmark" // "benchmark" | "user"
 };
 
 // DOM Element Registry
@@ -39,6 +48,7 @@ const elements = {
   compareSection: document.getElementById("compareSection"),
   backtestSection: document.getElementById("backtestSection"),
   portfolioSection: document.getElementById("portfolioSection"),
+  researchSection: document.getElementById("researchSection"),
   btnGlobalHistory: document.getElementById("btnGlobalHistory"),
   globalHistoryBadge: document.getElementById("globalHistoryBadge"),
 
@@ -126,7 +136,51 @@ const elements = {
   ttPlain: document.getElementById("ttPlain"),
   ttRule: document.getElementById("ttRule"),
   ttDiagnosis: document.getElementById("ttDiagnosis"),
-  ttScenario: document.getElementById("ttScenario")
+  ttScenario: document.getElementById("ttScenario"),
+
+  // Research Section Elements
+  researchSourceTabs: document.getElementById("researchSourceTabs"),
+  btnSourceBenchmark: document.getElementById("btnSourceBenchmark"),
+  btnSourceUser: document.getElementById("btnSourceUser"),
+  researchActiveSourceBadge: document.getElementById("researchActiveSourceBadge"),
+  statTotalStocks: document.getElementById("statTotalStocks"),
+  statReportCount: document.getElementById("statReportCount"),
+  statUserCount: document.getElementById("statUserCount"),
+  researchSearchInput: document.getElementById("researchSearchInput"),
+  btnClearResearchSearch: document.getElementById("btnClearResearchSearch"),
+  researchSectorFilter: document.getElementById("researchSectorFilter"),
+  researchSortBy: document.getElementById("researchSortBy"),
+  researchResultCount: document.getElementById("researchResultCount"),
+  btnResetResearchFilters: document.getElementById("btnResetResearchFilters"),
+  researchRatingPills: document.getElementById("researchRatingPills"),
+  researchCardsGrid: document.getElementById("researchCardsGrid"),
+  researchPagination: document.getElementById("researchPagination"),
+
+  // Dossier Perspectives Panel (方案 A)
+  dossierPerspectivesPanel: document.getElementById("dossierPerspectivesPanel"),
+  perspStockBadge: document.getElementById("perspStockBadge"),
+  perspSubText: document.getElementById("perspSubText"),
+  perspTabsSwitch: document.getElementById("perspTabsSwitch"),
+  btnPerspBenchmark: document.getElementById("btnPerspBenchmark"),
+  btnPerspUser: document.getElementById("btnPerspUser"),
+  perspBenchmarkRatingTag: document.getElementById("perspBenchmarkRatingTag"),
+  perspUserRatingTag: document.getElementById("perspUserRatingTag"),
+  btnReadStockReport: document.getElementById("btnReadStockReport"),
+  perspectiveContentCard: document.getElementById("perspectiveContentCard"),
+
+  // Research Report Modal
+  researchReportModal: document.getElementById("researchReportModal"),
+  reportModalStockName: document.getElementById("reportModalStockName"),
+  reportModalStockSymbol: document.getElementById("reportModalStockSymbol"),
+  reportModalRatingBadge: document.getElementById("reportModalRatingBadge"),
+  reportModalUniverseTag: document.getElementById("reportModalUniverseTag"),
+  reportModalSubtitle: document.getElementById("reportModalSubtitle"),
+  btnJumpToReportDossier: document.getElementById("btnJumpToReportDossier"),
+  btnCopyReportMarkdown: document.getElementById("btnCopyReportMarkdown"),
+  btnCopyReportText: document.getElementById("btnCopyReportText"),
+  btnCloseReportModal: document.getElementById("btnCloseReportModal"),
+  reportLoadingState: document.getElementById("reportLoadingState"),
+  reportMarkdownContainer: document.getElementById("reportMarkdownContainer")
 };
 
 // Module Meta Definition (Rule P1 10: 估值速览排在第一位)
@@ -232,6 +286,7 @@ window.addEventListener("DOMContentLoaded", () => {
   initBacktestListeners();
   initPortfolioListeners();
   initHoldingsListeners();
+  initResearchListeners();
   loadHistoryCount();
   loadWatchlist().finally(() => handleUrlRouting());
 });
@@ -249,6 +304,8 @@ async function syncRegisteredStocks() {
           name_cn: s.name_zh,
           name_en: s.name_en,
           sector: s.sector,
+          universe_type: s.universe_type || "SP500",
+          benchmark_rating: s.benchmark_rating || ""
         };
         if (idx >= 0) {
           US_STOCK_UNIVERSE[idx] = { ...US_STOCK_UNIVERSE[idx], ...item };
@@ -277,6 +334,9 @@ function handleUrlRouting() {
     }
   } else if (hash === "#/screener") {
     switchMainTab("screenerSection");
+    return;
+  } else if (hash === "#/research") {
+    switchMainTab("researchSection");
     return;
   } else if (hash === "#/compare") {
     switchMainTab("compareSection");
@@ -919,6 +979,7 @@ async function hotSyncPrice() {
 function renderDossier() {
   if (!state.currentDossier) return;
   renderHeaderInfo();
+  renderDossierPerspectives();
   switchTopicTab(state.activeModule || "business_and_industry");
 }
 
@@ -2889,6 +2950,9 @@ function switchMainTab(targetSectionId) {
   } else if (targetSectionId === "portfolioSection") {
     if (window.location.hash !== "#/portfolio") history.pushState(null, "", "#/portfolio");
     loadPortfolioTab();
+  } else if (targetSectionId === "researchSection") {
+    if (window.location.hash !== "#/research") history.pushState(null, "", "#/research");
+    loadResearchTab();
   } else if (targetSectionId === "dossierSection") {
     if (state.currentSymbol) {
       if (window.location.hash !== `#/dossier/${state.currentSymbol}`) {
@@ -4673,5 +4737,1033 @@ async function inspectExistingHoldings() {
     }
   }
 }
+
+// ==============================================================================
+// 9. Research Library (双库518标的 · Benchmark & User Dual Sources)
+// ==============================================================================
+
+let researchSearchDebounceTimer = null;
+let currentReportMarkdownRaw = "";
+
+function initResearchListeners() {
+  // 1. 数据源切换 Tab (默认美股全景投研库)
+  if (elements.btnSourceBenchmark) {
+    elements.btnSourceBenchmark.addEventListener("click", () => switchResearchSource("benchmark"));
+  }
+  if (elements.btnSourceUser) {
+    elements.btnSourceUser.addEventListener("click", () => switchResearchSource("user"));
+  }
+
+  // 2. 搜索框过滤与防抖
+  if (elements.researchSearchInput) {
+    elements.researchSearchInput.addEventListener("input", (e) => {
+      const val = e.target.value.trim();
+      if (elements.btnClearResearchSearch) {
+        elements.btnClearResearchSearch.style.display = val ? "block" : "none";
+      }
+      clearTimeout(researchSearchDebounceTimer);
+      researchSearchDebounceTimer = setTimeout(() => {
+        state.researchQuery = val;
+        state.researchPage = 1;
+        loadResearchTab();
+      }, 250);
+    });
+  }
+
+  if (elements.btnClearResearchSearch) {
+    elements.btnClearResearchSearch.addEventListener("click", () => {
+      if (elements.researchSearchInput) {
+        elements.researchSearchInput.value = "";
+        elements.btnClearResearchSearch.style.display = "none";
+      }
+      state.researchQuery = "";
+      state.researchPage = 1;
+      loadResearchTab();
+    });
+  }
+
+  // 3. 行业与排序下拉筛选
+  if (elements.researchSectorFilter) {
+    elements.researchSectorFilter.addEventListener("change", (e) => {
+      state.researchSector = e.target.value;
+      state.researchPage = 1;
+      loadResearchTab();
+    });
+  }
+
+  if (elements.researchSortBy) {
+    elements.researchSortBy.addEventListener("change", (e) => {
+      state.researchSortBy = e.target.value;
+      state.researchPage = 1;
+      loadResearchTab();
+    });
+  }
+
+  // 4. 重置筛选
+  if (elements.btnResetResearchFilters) {
+    elements.btnResetResearchFilters.addEventListener("click", () => {
+      state.researchQuery = "";
+      state.researchSector = "";
+      state.researchRating = "";
+      state.researchSortBy = "total_score_desc";
+      state.researchPage = 1;
+
+      if (elements.researchSearchInput) elements.researchSearchInput.value = "";
+      if (elements.btnClearResearchSearch) elements.btnClearResearchSearch.style.display = "none";
+      if (elements.researchSectorFilter) elements.researchSectorFilter.value = "";
+      if (elements.researchSortBy) elements.researchSortBy.value = "total_score_desc";
+
+      loadResearchTab();
+    });
+  }
+
+  // 5. 个股档案顶部双重视角切换 (方案 A: 外部机构 vs 买方避雷)
+  if (elements.btnPerspBenchmark) {
+    elements.btnPerspBenchmark.addEventListener("click", () => handleDossierPerspectiveSwitch("benchmark"));
+  }
+  if (elements.btnPerspUser) {
+    elements.btnPerspUser.addEventListener("click", () => handleDossierPerspectiveSwitch("user"));
+  }
+
+  // 6. 档案中点击“查看深度研报全文”
+  if (elements.btnReadStockReport) {
+    elements.btnReadStockReport.addEventListener("click", () => {
+      if (!state.currentDossier) return;
+      const ticker = (state.currentDossier.ticker || state.currentDossier.symbol || "").replace(".US", "");
+      const name = state.currentDossier.name || ticker;
+      openResearchReportModal(ticker, name);
+    });
+  }
+
+  // 7. Markdown 研报模态框交互
+  if (elements.btnCloseReportModal) {
+    elements.btnCloseReportModal.addEventListener("click", closeResearchReportModal);
+  }
+  if (elements.researchReportModal) {
+    elements.researchReportModal.addEventListener("click", (e) => {
+      if (e.target === elements.researchReportModal) closeResearchReportModal();
+    });
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && elements.researchReportModal && elements.researchReportModal.style.display !== "none") {
+      closeResearchReportModal();
+    }
+  });
+
+  if (elements.btnCopyReportMarkdown) {
+    elements.btnCopyReportMarkdown.addEventListener("click", () => {
+      if (!currentReportMarkdownRaw) return;
+      navigator.clipboard.writeText(currentReportMarkdownRaw).then(() => {
+        if (elements.btnCopyReportText) {
+          elements.btnCopyReportText.textContent = "已复制全文!";
+          setTimeout(() => { elements.btnCopyReportText.textContent = "复制研报"; }, 1500);
+        }
+      });
+    });
+  }
+}
+
+function switchResearchSource(source) {
+  state.researchSource = source;
+  state.researchRating = "";
+  state.researchPage = 1;
+
+  if (elements.btnSourceBenchmark) {
+    elements.btnSourceBenchmark.classList.toggle("active", source === "benchmark");
+  }
+  if (elements.btnSourceUser) {
+    elements.btnSourceUser.classList.toggle("active", source === "user");
+  }
+
+  if (elements.researchActiveSourceBadge) {
+    if (source === "benchmark") {
+      elements.researchActiveSourceBadge.textContent = "标普500 + 纳指100 · 518 只标的";
+      elements.researchActiveSourceBadge.style.color = "#38bdf8";
+      elements.researchActiveSourceBadge.style.borderColor = "rgba(56, 189, 248, 0.35)";
+    } else {
+      elements.researchActiveSourceBadge.textContent = "标普500专研 · 506 期避雷记录";
+      elements.researchActiveSourceBadge.style.color = "#c084fc";
+      elements.researchActiveSourceBadge.style.borderColor = "rgba(168, 85, 247, 0.4)";
+    }
+  }
+
+  loadResearchTab();
+}
+
+async function loadResearchTab() {
+  const grid = elements.researchCardsGrid;
+  if (!grid) return;
+
+  grid.innerHTML = `
+    <div class="research-loading-placeholder" style="grid-column: 1 / -1; padding: 48px 0; text-align: center; color: #94a3b8;">
+      <div class="spinner-pulsar-sm" style="margin: 0 auto 12px;"></div>
+      <span>正在检索并对齐权威投研库标的...</span>
+    </div>
+  `;
+
+  try {
+    const params = new URLSearchParams({
+      source: state.researchSource,
+      query: state.researchQuery,
+      sector: state.researchSector,
+      rating: state.researchRating,
+      sort_by: state.researchSortBy,
+      page: state.researchPage,
+      page_size: state.researchPageSize
+    });
+
+    const res = await fetch(`/api/research/list?${params.toString()}`);
+    const data = await res.json();
+
+    if (!data.ok) {
+      grid.innerHTML = `<div class="error-box" style="grid-column: 1 / -1; padding: 24px; color: #f87171;">数据检索失败: ${escapeHtml(data.message || "未知错误")}</div>`;
+      return;
+    }
+
+    // 1. 更新结果统计
+    if (elements.researchResultCount) {
+      elements.researchResultCount.textContent = `共 ${data.total} 只符合条件的标的 (第 ${data.page}/${data.total_pages || 1} 页)`;
+    }
+
+    // 2. 动态填充行业下拉选项
+    updateResearchSectorOptions(data.sectors || []);
+
+    // 3. 动态渲染评级药丸
+    renderResearchRatingPills(data.rating_counts || {});
+
+    // 4. 渲染卡片网格
+    renderResearchCards(data.items || []);
+
+    // 5. 渲染分页
+    renderResearchPagination(data.total, data.page, data.page_size, data.total_pages);
+
+  } catch (err) {
+    grid.innerHTML = `<div class="error-box" style="grid-column: 1 / -1; padding: 24px; color: #f87171;">网络或数据异常: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function updateResearchSectorOptions(sectors) {
+  const sel = elements.researchSectorFilter;
+  if (!sel) return;
+
+  const currentVal = state.researchSector;
+  // 保留"全部行业板块"选项
+  sel.innerHTML = `<option value="">全部行业板块 (${sectors.length} 个)</option>`;
+  sectors.forEach(sec => {
+    const opt = document.createElement("option");
+    opt.value = sec;
+    opt.textContent = sec;
+    if (sec === currentVal) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function renderResearchRatingPills(counts) {
+  const container = elements.researchRatingPills;
+  if (!container) return;
+
+  let totalAll = 0;
+  Object.values(counts).forEach(v => { totalAll += v; });
+
+  let pillsHtml = `
+    <button type="button" class="rating-pill-btn ${!state.researchRating ? 'active' : ''}" data-rating="">
+      <span>全部评级</span>
+      <span class="pill-count">${totalAll}</span>
+    </button>
+  `;
+
+  for (const [rating, cnt] of Object.entries(counts)) {
+    const isActive = state.researchRating === rating;
+    pillsHtml += `
+      <button type="button" class="rating-pill-btn ${isActive ? 'active' : ''}" data-rating="${escapeHtml(rating)}">
+        <span>${escapeHtml(rating)}</span>
+        <span class="pill-count">${cnt}</span>
+      </button>
+    `;
+  }
+
+  container.innerHTML = pillsHtml;
+
+  container.querySelectorAll(".rating-pill-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.researchRating = btn.getAttribute("data-rating") || "";
+      state.researchPage = 1;
+      loadResearchTab();
+    });
+  });
+}
+
+function renderResearchCards(items) {
+  const grid = elements.researchCardsGrid;
+  if (!grid) return;
+
+  if (!items || items.length === 0) {
+    grid.innerHTML = `
+      <div style="grid-column: 1 / -1; padding: 60px 20px; text-align: center; color: #94a3b8; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
+        <div style="font-size: 32px; margin-bottom: 8px;">🔍</div>
+        <p style="font-size: 15px; font-weight: 500; color: #f1f5f9; margin-bottom: 4px;">未检索到符合条件的标的</p>
+        <p style="font-size: 12.5px; color: #64748b;">请尝试调整搜索关键词、行业分类或评级过滤条件</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (state.researchSource === "benchmark") {
+    grid.innerHTML = items.map(renderBenchmarkCardHtml).join("");
+  } else {
+    grid.innerHTML = items.map(renderUserCardHtml).join("");
+  }
+}
+
+function renderBenchmarkCardHtml(item) {
+  const sym = item.symbol || `${item.ticker}.US`;
+  const t = item.ticker;
+  const isNdx = Boolean(item.is_ndx_ex_sp);
+  
+  // Rating & Colors
+  const ratingText = item.rating || "建议买入";
+  let ratingColor = "#38bdf8";
+  if (ratingText === "建议买入" || ratingText.includes("强推")) ratingColor = "#10b981";
+  else if (ratingText === "逢低关注") ratingColor = "#38bdf8";
+  else if (ratingText === "持有观望") ratingColor = "#f59e0b";
+  else if (ratingText === "不建议买入" || ratingText.includes("回避")) ratingColor = "#ef4444";
+
+  // Upside calculation (support ratio or percentage)
+  let upsideStr = "--";
+  let upsideClass = "";
+  if (item.target_upside != null) {
+    let u = Number(item.target_upside);
+    if (Math.abs(u) <= 5.0) u = u * 100.0;
+    upsideStr = `${u >= 0 ? '+' : ''}${u.toFixed(1)}%`;
+    if (u > 0) upsideClass = "text-success";
+  }
+
+  const peVal = item.ttm_pe != null ? Number(item.ttm_pe).toFixed(1) : (item.fwd_pe != null ? Number(item.fwd_pe).toFixed(1) : "--");
+  const fcfVal = item.fcf_yield != null ? (Number(item.fcf_yield) * 100).toFixed(1) + '%' : "--";
+
+  const dimList = [
+    { name: "护城河",   score: item.score_moat,      color: "#60a5fa" },
+    { name: "成长爆发", score: item.score_growth,    color: "#a78bfa" },
+    { name: "财务健康", score: item.score_financial, color: "#fbbf24" },
+    { name: "股东回报", score: item.score_return,    color: "#34d399" },
+    { name: "估值安全", score: item.score_valuation, color: "#38bdf8" },
+    { name: "催化动量", score: item.score_catalyst,  color: "#f472b6" }
+  ];
+
+  return `
+    <div class="research-card">
+      <div class="research-card-header">
+        <div>
+          <div class="card-ticker-row">
+            <span class="card-ticker">${escapeHtml(t)}</span>
+            <span class="card-universe-badge ${isNdx ? 'ndx' : ''}">${isNdx ? '纳指100特选' : '标普500+纳指100'}</span>
+          </div>
+          <div class="card-name-cn">${escapeHtml(item.name_cn || t)}</div>
+          <div class="card-sector-tag">${escapeHtml(item.sector || '美股成份股')}</div>
+        </div>
+
+        <div class="card-score-badge" style="border-color: ${ratingColor};">
+          <span class="badge-rating-text" style="color: ${ratingColor};">${escapeHtml(ratingText)}</span>
+          <div>
+            <span class="badge-score-num" style="color: ${ratingColor};">${item.total_score != null ? Number(item.total_score).toFixed(0) : '--'}</span>
+            <span class="badge-score-max">/30分</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 核心指标 -->
+      <div class="benchmark-metrics-row">
+        <div class="metric-item">
+          <span class="metric-lbl">目标价</span>
+          <span class="metric-val">${item.target_price != null ? '$' + Number(item.target_price).toFixed(2) : '--'}</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-lbl">预期空间</span>
+          <span class="metric-val ${upsideClass}">${upsideStr}</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-lbl">PE / FCF</span>
+          <span class="metric-val">${peVal}x / ${fcfVal}</span>
+        </div>
+      </div>
+
+      <!-- 六维雷达进度条 (总分30分) -->
+      <div class="dimension-bars-list">
+        ${dimList.map(dim => {
+          const s = Number(dim.score) || 0;
+          const pct = Math.min(100, (s / 5.0) * 100);
+          return `
+            <div class="dimension-bar-item">
+              <span class="dim-name">${dim.name}</span>
+              <div class="dim-track">
+                <div class="dim-fill" style="width: ${pct}%; background: ${dim.color};"></div>
+              </div>
+              <span class="dim-val">${s.toFixed(1)}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      <!-- 分步建仓指引摘要 -->
+      ${item.action_plan ? `
+        <div class="user-falsify-box" style="background: rgba(56, 189, 248, 0.08); border-left-color: #38bdf8; color: #bae6fd; font-size: 11px; margin-bottom: 10px;" title="${escapeHtml(item.action_plan)}">
+          <strong style="color: #e0f2fe;">🎯 建仓挂单指引：</strong>
+          <span>${escapeHtml(item.action_plan)}</span>
+        </div>
+      ` : ''}
+
+      <!-- 卡片操作行 -->
+      <div class="card-actions-row">
+        <button type="button" class="btn-read-md" onclick="openResearchReportModal('${escapeHtml(t)}', '${escapeHtml(item.name_cn || t)}')">
+          <span class="icon">📖</span>
+          <span>深度研报全文</span>
+        </button>
+        <button type="button" class="btn-dossier-entry" onclick="jumpToDossier('${escapeHtml(sym)}')">
+          <span>进入档案 ➔</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderUserCardHtml(item) {
+  const sym = item.symbol || `${item.ticker}.US`;
+  const t = item.ticker;
+
+  // Rating color mapping
+  const r = item.rating || "优质低估";
+  let ratingBadgeColor = "#38bdf8";
+  if (r === "优质低估") ratingBadgeColor = "#10b981";
+  else if (r === "周期等待") ratingBadgeColor = "#38bdf8";
+  else if (r === "高估观望") ratingBadgeColor = "#f59e0b";
+  else if (r === "坚决回避") ratingBadgeColor = "#ef4444";
+
+  // Oversold detection
+  const isOversold = r === "优质低估" || (item.risks_and_mispricing && item.risks_and_mispricing.includes("错杀"));
+
+  return `
+    <div class="research-card">
+      <div class="research-card-header">
+        <div>
+          <div class="card-ticker-row">
+            <span class="card-ticker">${escapeHtml(t)}</span>
+            <span class="card-universe-badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">标普500避雷库</span>
+          </div>
+          <div class="card-name-cn">${escapeHtml(item.name_cn || item.company_name || t)}</div>
+          <div class="card-sector-tag">${escapeHtml(item.sector || '标普500成份股')}</div>
+        </div>
+
+        <div class="card-score-badge" style="border-color: ${ratingBadgeColor};">
+          <span class="badge-rating-text" style="color: ${ratingBadgeColor};">${escapeHtml(r)}</span>
+          <span style="font-size: 11px; color: #94a3b8; margin-top: 2px;">买方避雷研判</span>
+        </div>
+      </div>
+
+      <!-- 错杀发光标签 -->
+      ${isOversold ? `
+        <div class="user-oversold-banner" title="该标的属于优质资产，当前估值遭遇非理性错杀">
+          <span>⭐</span>
+          <strong>市场错杀价值发现</strong>
+          <span style="font-size: 11px; opacity: 0.85; margin-left: auto;">黄金坑</span>
+        </div>
+      ` : ''}
+
+      <!-- 核心指标行 -->
+      <div class="benchmark-metrics-row">
+        <div class="metric-item" style="grid-column: 1 / -1;">
+          <span class="metric-lbl">估值水位与历史分位</span>
+          <span class="metric-val" style="font-size: 11.5px; font-weight: normal; color: #cbd5e1; line-height: 1.4;">
+            ${escapeHtml(item.valuation_pe || '历史中枢估值跟踪中')}
+          </span>
+        </div>
+      </div>
+
+      <!-- 独家买方证伪防线警告框 -->
+      ${item.invalidation_trigger ? `
+        <div class="user-falsify-box">
+          <strong>🛡️ 独家买方证伪防线：</strong>
+          <span>${escapeHtml(item.invalidation_trigger)}</span>
+        </div>
+      ` : ''}
+
+      <!-- 操作建议或护城河 -->
+      ${item.action_plan ? `
+        <div class="user-competence-box" title="${escapeHtml(item.action_plan)}">
+          <strong>操作计划：</strong>${escapeHtml(item.action_plan)}
+        </div>
+      ` : (item.moat_and_momentum ? `
+        <div class="user-competence-box" title="${escapeHtml(item.moat_and_momentum)}">
+          ${escapeHtml(item.moat_and_momentum)}
+        </div>
+      ` : '')}
+
+      <!-- 卡片操作行 -->
+      <div class="card-actions-row">
+        <span style="font-size: 11.5px; color: #64748b;">买方风控跟踪</span>
+        <button type="button" class="btn-dossier-entry" onclick="jumpToDossier('${escapeHtml(sym)}')">
+          <span>进入档案 ➔</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderResearchPagination(total, page, pageSize, totalPages) {
+  const container = elements.researchPagination;
+  if (!container) return;
+
+  if (total <= pageSize) {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "flex";
+  totalPages = totalPages || Math.ceil(total / pageSize);
+
+  let html = `
+    <button type="button" class="page-btn" ${page <= 1 ? 'disabled' : ''} onclick="goToResearchPage(${page - 1})">← 上一页</button>
+  `;
+
+  // 简易页码窗口 (显示前2、当前、后2)
+  const startP = Math.max(1, page - 2);
+  const endP = Math.min(totalPages, page + 2);
+
+  if (startP > 1) {
+    html += `<button type="button" class="page-btn" onclick="goToResearchPage(1)">1</button>`;
+    if (startP > 2) html += `<span style="color:#64748b; padding:0 4px;">...</span>`;
+  }
+
+  for (let i = startP; i <= endP; i++) {
+    html += `
+      <button type="button" class="page-btn ${i === page ? 'active' : ''}" onclick="goToResearchPage(${i})">${i}</button>
+    `;
+  }
+
+  if (endP < totalPages) {
+    if (endP < totalPages - 1) html += `<span style="color:#64748b; padding:0 4px;">...</span>`;
+    html += `<button type="button" class="page-btn" onclick="goToResearchPage(${totalPages})">${totalPages}</button>`;
+  }
+
+  html += `
+    <button type="button" class="page-btn" ${page >= totalPages ? 'disabled' : ''} onclick="goToResearchPage(${page + 1})">下一页 →</button>
+  `;
+
+  container.innerHTML = html;
+}
+
+function goToResearchPage(newPage) {
+  state.researchPage = newPage;
+  loadResearchTab();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ==============================================================================
+// 10. Dossier Perspectives & NDX 15 Stocks Disabling (方案 A + 避雷库约束)
+// ==============================================================================
+
+function renderDossierPerspectives() {
+  const d = state.currentDossier;
+  if (!d) return;
+
+  const persp = d.research_perspectives || {};
+  const bm = persp.benchmark;
+  const usr = persp.user;
+  const hasBm = Boolean(persp.has_benchmark && bm);
+  const hasUsr = Boolean(persp.has_user && usr);
+  const disabledReason = persp.user_disabled_reason || "该标的属于纳指100非标普成分股，本库仅收录标普500";
+
+  // 1. 顶部标签：是否纳指非标普
+  if (elements.perspStockBadge) {
+    if (bm?.is_ndx_ex_sp) {
+      elements.perspStockBadge.textContent = "纳指100特选 (非标普成分)";
+      elements.perspStockBadge.style.background = "rgba(245, 158, 11, 0.15)";
+      elements.perspStockBadge.style.color = "#fbbf24";
+      elements.perspStockBadge.style.borderColor = "rgba(245, 158, 11, 0.35)";
+    } else {
+      elements.perspStockBadge.textContent = "标普500 + 纳指100";
+      elements.perspStockBadge.style.background = "rgba(56, 189, 248, 0.15)";
+      elements.perspStockBadge.style.color = "#38bdf8";
+      elements.perspStockBadge.style.borderColor = "rgba(56, 189, 248, 0.35)";
+    }
+  }
+
+  // 2. Benchmark 按钮状态
+  if (elements.btnPerspBenchmark) {
+    if (elements.perspBenchmarkRatingTag) {
+      elements.perspBenchmarkRatingTag.textContent = bm?.rating ? `${bm.rating} (${bm.total_score || '--'}分)` : "已入库";
+    }
+  }
+
+  // 3. User 按钮状态 (若是纳指 15 只非标普，禁用且带 Tooltip)
+  if (elements.btnPerspUser) {
+    if (hasUsr) {
+      elements.btnPerspUser.classList.remove("btn-disabled");
+      elements.btnPerspUser.title = "点击切换至我的买方避雷研判视角";
+      if (elements.perspUserRatingTag) {
+        elements.perspUserRatingTag.textContent = usr?.custom_rating || "已建档";
+        elements.perspUserRatingTag.style.color = usr?.rating_badge_color || "#a78bfa";
+      }
+    } else {
+      elements.btnPerspUser.classList.add("btn-disabled");
+      // 鼠标放上去时显示明确说明
+      elements.btnPerspUser.title = disabledReason;
+      if (elements.perspUserRatingTag) {
+        elements.perspUserRatingTag.textContent = "非标普未收录";
+        elements.perspUserRatingTag.style.color = "#94a3b8";
+      }
+      // 若当前刚好停留在 user 视角，自动回退到 benchmark
+      if (state.activeDossierPerspective === "user") {
+        state.activeDossierPerspective = "benchmark";
+      }
+    }
+  }
+
+  // 4. 更新激活按钮外观
+  updateDossierPerspectiveButtons();
+
+  // 5. 渲染视角内容卡片
+  renderDossierPerspectiveContent();
+}
+
+function handleDossierPerspectiveSwitch(target) {
+  const d = state.currentDossier;
+  const persp = d?.research_perspectives || {};
+
+  if (target === "user") {
+    // 拦截点击：如果是 15 只纳指非标普成分股，点不动并弹出友好提示！
+    if (!persp.has_user) {
+      const reason = persp.user_disabled_reason || "该标的属于纳指100非标普成分股，本库仅收录标普500";
+      showPerspectiveDisabledToast(reason);
+      return; // 坚决不切换！点不动！
+    }
+  }
+
+  state.activeDossierPerspective = target;
+  updateDossierPerspectiveButtons();
+  renderDossierPerspectiveContent();
+}
+
+function updateDossierPerspectiveButtons() {
+  if (elements.btnPerspBenchmark) {
+    elements.btnPerspBenchmark.classList.toggle("active", state.activeDossierPerspective === "benchmark");
+  }
+  if (elements.btnPerspUser) {
+    elements.btnPerspUser.classList.toggle("active", state.activeDossierPerspective === "user");
+  }
+}
+
+function showPerspectiveDisabledToast(message) {
+  // 简易非侵入浮动气泡
+  let toast = document.getElementById("perspectiveToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "perspectiveToast";
+    toast.style.position = "fixed";
+    toast.style.top = "70px";
+    toast.style.left = "50%";
+    toast.style.transform = "translateX(-50%)";
+    toast.style.background = "linear-gradient(135deg, #1f2937, #111827)";
+    toast.style.border = "1px solid #f59e0b";
+    toast.style.color = "#fbbf24";
+    toast.style.padding = "10px 20px";
+    toast.style.borderRadius = "8px";
+    toast.style.fontSize = "13px";
+    toast.style.fontWeight = "600";
+    toast.style.boxShadow = "0 10px 25px rgba(0,0,0,0.5)";
+    toast.style.zIndex = "9999";
+    toast.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+    document.body.appendChild(toast);
+  }
+
+  toast.innerHTML = `⚠️ ${escapeHtml(message)}`;
+  toast.style.opacity = "1";
+  toast.style.display = "block";
+
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => { toast.style.display = "none"; }, 300);
+  }, 2800);
+}
+
+function renderDossierPerspectiveContent() {
+  const card = elements.perspectiveContentCard;
+  if (!card) return;
+
+  const d = state.currentDossier;
+  if (!d) return;
+
+  const persp = d.research_perspectives || {};
+  const bm = persp.benchmark;
+  const usr = persp.user;
+
+  if (state.activeDossierPerspective === "benchmark") {
+    if (!bm) {
+      card.innerHTML = `<div style="color: #94a3b8; font-size: 13px; padding: 12px;">暂无外部机构基准评级数据。</div>`;
+      return;
+    }
+
+    const ratingText = bm.rating || "建议买入";
+    let ratingColor = "#38bdf8";
+    if (ratingText === "建议买入" || ratingText.includes("强推")) ratingColor = "#10b981";
+    else if (ratingText === "逢低关注") ratingColor = "#38bdf8";
+    else if (ratingText === "持有观望") ratingColor = "#f59e0b";
+    else if (ratingText === "不建议买入" || ratingText.includes("回避")) ratingColor = "#ef4444";
+
+    let upsideStr = "--";
+    let upsideClass = "";
+    if (bm.target_upside != null) {
+      let u = Number(bm.target_upside);
+      if (Math.abs(u) <= 5.0) u = u * 100.0;
+      upsideStr = `${u >= 0 ? '+' : ''}${u.toFixed(1)}%`;
+      if (u > 0) upsideClass = "text-success";
+    }
+
+    const peVal = bm.ttm_pe != null ? Number(bm.ttm_pe).toFixed(1) : (bm.fwd_pe != null ? Number(bm.fwd_pe).toFixed(1) : "--");
+    const fcfVal = bm.fcf_yield != null ? (Number(bm.fcf_yield) * 100).toFixed(1) + '%' : "--";
+
+    const dimList = [
+      { name: "护城河",   score: bm.score_moat,      color: "#60a5fa" },
+      { name: "成长爆发", score: bm.score_growth,    color: "#a78bfa" },
+      { name: "财务健康", score: bm.score_financial, color: "#fbbf24" },
+      { name: "股东回报", score: bm.score_return,    color: "#34d399" },
+      { name: "估值安全", score: bm.score_valuation, color: "#38bdf8" },
+      { name: "催化动量", score: bm.score_catalyst,  color: "#f472b6" }
+    ];
+
+    card.innerHTML = `
+      <div class="persp-detail-grid">
+        <!-- 维度一：机构总评与目标空间 -->
+        <div class="persp-detail-box">
+          <div class="persp-detail-title">
+            <span>📊 机构综合评级与目标空间</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;">
+            <span style="font-size: 20px; font-weight: 800; color: ${ratingColor};">${escapeHtml(ratingText)}</span>
+            <span style="font-size: 16px; font-weight: 700; font-family: var(--font-mono); color: #f8fafc;">${bm.total_score != null ? Number(bm.total_score).toFixed(0) : '--'}/30分</span>
+          </div>
+          <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.6;">
+            <div>目标价位：<strong style="color: #38bdf8;">${bm.target_price != null ? '$' + Number(bm.target_price).toFixed(2) : '--'}</strong></div>
+            <div>预期空间：<strong class="${upsideClass}">${upsideStr}</strong></div>
+            <div>PE / FCF：<span style="color: #94a3b8;">${peVal}x / ${fcfVal}</span></div>
+          </div>
+          ${bm.conclusion ? `
+            <div style="margin-top: 8px; font-size: 11.5px; color: #94a3b8; line-height: 1.4; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+              <strong>研报结论：</strong>${escapeHtml(bm.conclusion)}
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 维度二：六维雷达打分 -->
+        <div class="persp-detail-box">
+          <div class="persp-detail-title">
+            <span>🧭 30分制六维质地量化分解</span>
+          </div>
+          <div class="dimension-bars-list" style="margin-bottom: 0;">
+            ${dimList.map(dim => {
+              const s = Number(dim.score) || 0;
+              const pct = Math.min(100, (s / 5.0) * 100);
+              return `
+                <div class="dimension-bar-item">
+                  <span class="dim-name" style="width: 52px;">${dim.name}</span>
+                  <div class="dim-track">
+                    <div class="dim-fill" style="width: ${pct}%; background: ${dim.color};"></div>
+                  </div>
+                  <span class="dim-val">${s.toFixed(1)}</span>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+
+        <!-- 维度三：分步建仓操作规划 -->
+        <div class="persp-detail-box">
+          <div class="persp-detail-title">
+            <span>🎯 机构分步建仓挂单指引</span>
+          </div>
+          <p style="font-size: 12px; color: #cbd5e1; line-height: 1.6; margin: 0 0 8px;">
+            ${escapeHtml(bm.action_plan || '逢低分批布局，控制单一标的仓位上限。')}
+          </p>
+          <div style="font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+            📖 已收录该标的全文投研报告，可点击右上方按钮调阅。
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    // User Perspective
+    if (!usr) {
+      card.innerHTML = `<div style="color: #94a3b8; font-size: 13px; padding: 12px;">该标的暂无买方避雷研判记录。</div>`;
+      return;
+    }
+
+    const r = usr.rating || "优质低估";
+    let badgeColor = "#38bdf8";
+    if (r === "优质低估") badgeColor = "#10b981";
+    else if (r === "周期等待") badgeColor = "#38bdf8";
+    else if (r === "高估观望") badgeColor = "#f59e0b";
+    else if (r === "坚决回避") badgeColor = "#ef4444";
+
+    const isOversold = r === "优质低估" || (usr.risks_and_mispricing && usr.risks_and_mispricing.includes("错杀"));
+
+    card.innerHTML = `
+      <div class="persp-detail-grid">
+        <!-- 维度一：避雷四级评级与估值水位 -->
+        <div class="persp-detail-box">
+          <div class="persp-detail-title">
+            <span>🛡️ 独家买方避雷评级</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;">
+            <span style="font-size: 20px; font-weight: 800; color: ${badgeColor};">${escapeHtml(r)}</span>
+            <span style="font-size: 12px; color: #94a3b8;">${escapeHtml(usr.round || '标普500专研')}</span>
+          </div>
+          ${isOversold ? `
+            <div class="user-oversold-banner" style="margin-bottom: 6px;">
+              <span>⭐</span>
+              <strong>市场错杀价值发现（核心机会）</strong>
+            </div>
+          ` : ''}
+          <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.5; margin-top: 6px;">
+            <strong>估值水位：</strong>${escapeHtml(usr.valuation_pe || '历史分位跟踪中')}
+          </div>
+        </div>
+
+        <!-- 维度二：证伪防守红线 -->
+        <div class="persp-detail-box" style="border-left: 3px solid #ef4444;">
+          <div class="persp-detail-title" style="color: #f87171;">
+            <span>🚨 独家买方证伪防守触发线</span>
+          </div>
+          <p style="font-size: 12px; color: #fca5a5; margin: 0 0 8px; line-height: 1.5;">
+            ${escapeHtml(usr.invalidation_trigger || '若核心基本面证伪或跌破关键防守位，无条件坚决止损出局。')}
+          </p>
+          ${usr.action_plan ? `
+            <div style="font-size: 11.5px; color: #fee2e2; border-top: 1px solid rgba(239, 68, 68, 0.2); padding-top: 6px;">
+              <strong>建仓纪律：</strong>${escapeHtml(usr.action_plan)}
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 维度三：错杀逻辑与核心壁垒 -->
+        <div class="persp-detail-box">
+          <div class="persp-detail-title">
+            <span>💡 商业壁垒与错杀/风险深度拆解</span>
+          </div>
+          ${usr.moat_and_momentum ? `
+            <div style="font-size: 11.5px; color: #cbd5e1; margin-bottom: 6px; line-height: 1.4;">
+              <strong style="color: #38bdf8;">护城河：</strong>${escapeHtml(usr.moat_and_momentum)}
+            </div>
+          ` : ''}
+          ${usr.risks_and_mispricing ? `
+            <div style="font-size: 11.5px; color: #94a3b8; line-height: 1.4;">
+              <strong style="color: #f59e0b;">风险与错杀：</strong>${escapeHtml(usr.risks_and_mispricing)}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ==============================================================================
+// 11. Markdown Fullscreen Report Reader Modal & Native Parser
+// ==============================================================================
+
+async function openResearchReportModal(ticker, nameCn) {
+  const modal = elements.researchReportModal;
+  if (!modal) return;
+
+  const t = (ticker || "").toUpperCase().replace(".US", "");
+  nameCn = nameCn || t;
+
+  if (elements.reportModalStockName) elements.reportModalStockName.textContent = nameCn;
+  if (elements.reportModalStockSymbol) elements.reportModalStockSymbol.textContent = `${t}.US`;
+  if (elements.reportModalUniverseTag) elements.reportModalUniverseTag.textContent = "标普500 + 纳指100";
+
+  // 进入深度档案按钮关联
+  if (elements.btnJumpToReportDossier) {
+    elements.btnJumpToReportDossier.onclick = () => {
+      closeResearchReportModal();
+      jumpToDossier(`${t}.US`);
+    };
+  }
+
+  // 展示模态框
+  modal.style.display = "flex";
+  if (elements.reportLoadingState) elements.reportLoadingState.style.display = "flex";
+  if (elements.reportMarkdownContainer) {
+    elements.reportMarkdownContainer.style.display = "none";
+    elements.reportMarkdownContainer.innerHTML = "";
+  }
+
+  currentReportMarkdownRaw = "";
+
+  try {
+    const res = await fetch(`/api/research/report?symbol=${t}`);
+    const data = await res.json();
+
+    if (!data.ok) {
+      if (elements.reportLoadingState) elements.reportLoadingState.style.display = "none";
+      if (elements.reportMarkdownContainer) {
+        elements.reportMarkdownContainer.style.display = "block";
+        elements.reportMarkdownContainer.innerHTML = `<div class="error-box" style="padding: 24px; color: #f87171;">${escapeHtml(data.message || "未找到此个股的深度研报")}</div>`;
+      }
+      return;
+    }
+
+    currentReportMarkdownRaw = data.report_content || data.content || "";
+    if (elements.reportModalRatingBadge && data.benchmark) {
+      const b = data.benchmark;
+      const rText = b.rating || '买入';
+      let rColor = "#34d399";
+      if (rText === "建议买入" || rText.includes("强推")) rColor = "#10b981";
+      else if (rText === "逢低关注") rColor = "#38bdf8";
+      else if (rText === "持有观望") rColor = "#f59e0b";
+      else if (rText === "不建议买入") rColor = "#ef4444";
+
+      elements.reportModalRatingBadge.textContent = `${rText} (${b.total_score != null ? Number(b.total_score).toFixed(0) : '--'}分)`;
+      elements.reportModalRatingBadge.style.color = rColor;
+      elements.reportModalRatingBadge.style.borderColor = rColor;
+    }
+
+    if (elements.reportLoadingState) elements.reportLoadingState.style.display = "none";
+    if (elements.reportMarkdownContainer) {
+      elements.reportMarkdownContainer.style.display = "block";
+      elements.reportMarkdownContainer.innerHTML = renderMarkdown(currentReportMarkdownRaw);
+    }
+
+  } catch (err) {
+    if (elements.reportLoadingState) elements.reportLoadingState.style.display = "none";
+    if (elements.reportMarkdownContainer) {
+      elements.reportMarkdownContainer.style.display = "block";
+      elements.reportMarkdownContainer.innerHTML = `<div class="error-box" style="padding: 24px; color: #f87171;">研报调阅网络异常: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+}
+
+function closeResearchReportModal() {
+  if (elements.researchReportModal) {
+    elements.researchReportModal.style.display = "none";
+  }
+}
+
+/**
+ * 纯前端高鲁棒 Markdown 解析器：
+ * 支持 Headers, Bold, Italic, Blockquote, Tables, Code, Lists, Horizontal Lines
+ */
+function renderMarkdown(md) {
+  if (!md) return "<p>暂无研报内容。</p>";
+
+  const lines = md.split(/\r?\n/);
+  const out = [];
+  let inTable = false;
+  let inList = false;
+  let tableHeaderParsed = false;
+
+  function formatInline(str) {
+    let s = str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    // Code
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Bold
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return s;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+
+    // 1. Table Detection
+    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+      if (inList) { out.push("</ul>"); inList = false; }
+      const cells = trimmed.slice(1, -1).split("|").map(c => c.trim());
+
+      // Is separator line? e.g. |---|---|
+      if (cells.every(c => /^:?-+:?$/.test(c))) {
+        tableHeaderParsed = true;
+        continue;
+      }
+
+      if (!inTable) {
+        inTable = true;
+        tableHeaderParsed = false;
+        out.push("<table>");
+      }
+
+      if (!tableHeaderParsed) {
+        out.push("<thead><tr>" + cells.map(c => `<th>${formatInline(c)}</th>`).join("") + "</tr></thead><tbody>");
+      } else {
+        out.push("<tr>" + cells.map(c => `<td>${formatInline(c)}</td>`).join("") + "</tr>");
+      }
+      continue;
+    } else if (inTable) {
+      out.push("</tbody></table>");
+      inTable = false;
+      tableHeaderParsed = false;
+    }
+
+    // 2. Unordered List
+    if (/^[-*+]\s+/.test(trimmed)) {
+      if (!inList) {
+        inList = true;
+        out.push("<ul>");
+      }
+      const content = trimmed.replace(/^[-*+]\s+/, "");
+      out.push(`<li>${formatInline(content)}</li>`);
+      continue;
+    } else if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+
+    // 3. Headers
+    if (trimmed.startsWith("#### ")) {
+      out.push(`<h4>${formatInline(trimmed.substring(5))}</h4>`);
+      continue;
+    }
+    if (trimmed.startsWith("### ")) {
+      out.push(`<h3>${formatInline(trimmed.substring(4))}</h3>`);
+      continue;
+    }
+    if (trimmed.startsWith("## ")) {
+      out.push(`<h2>${formatInline(trimmed.substring(3))}</h2>`);
+      continue;
+    }
+    if (trimmed.startsWith("# ")) {
+      out.push(`<h1>${formatInline(trimmed.substring(2))}</h1>`);
+      continue;
+    }
+
+    // 4. Horizontal Rule
+    if (/^---+$/.test(trimmed) || /^===+$/.test(trimmed)) {
+      out.push("<hr/>");
+      continue;
+    }
+
+    // 5. Blockquote
+    if (trimmed.startsWith("> ")) {
+      out.push(`<blockquote>${formatInline(trimmed.substring(2))}</blockquote>`);
+      continue;
+    }
+
+    // 6. Blank line
+    if (!trimmed) {
+      continue;
+    }
+
+    // 7. Regular paragraph
+    out.push(`<p>${formatInline(trimmed)}</p>`);
+  }
+
+  if (inTable) out.push("</tbody></table>");
+  if (inList) out.push("</ul>");
+
+  return out.join("\n");
+}
+
 
 

@@ -69,6 +69,11 @@ def get_or_create_dossier(symbol: str, force_refresh: bool = False) -> Dict[str,
             )
 
             if not (is_old_essence or is_old_preset or is_missing_source_tag or has_stale_dcf or missing_new_val or missing_financial_summary or missing_klines or has_fake_coverage or has_boilerplate):
+                try:
+                    from backend.services.research_kb import get_stock_research_detail
+                    existing["research_perspectives"] = get_stock_research_detail(sym)
+                except Exception:
+                    pass
                 return existing
 
     # 1. Fetch live stock bundle from Longbridge CLI (minimal_extra enables sub-second fast loading)
@@ -204,7 +209,7 @@ def get_or_create_dossier(symbol: str, force_refresh: bool = False) -> Dict[str,
     margin_pct = val_data.get("margin_of_safety_pct", 0.0)
 
     # Persist in SQLite
-    return save_or_update_dossier(
+    res = save_or_update_dossier(
         symbol=sym,
         name=name,
         price=price,
@@ -213,6 +218,12 @@ def get_or_create_dossier(symbol: str, force_refresh: bool = False) -> Dict[str,
         margin_of_safety_pct=margin_pct,
         modules_dict=modules
     )
+    try:
+        from backend.services.research_kb import get_stock_research_detail
+        res["research_perspectives"] = get_stock_research_detail(sym)
+    except Exception:
+        pass
+    return res
 
 
 def refresh_dossier_module(symbol: str, module_name: str) -> Dict[str, Any]:

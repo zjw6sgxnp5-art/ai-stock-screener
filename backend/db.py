@@ -148,6 +148,12 @@ def ensure_db() -> None:
                 """
             )
 
+    try:
+        from backend.services.research_kb import ensure_research_tables
+        ensure_research_tables()
+    except Exception as exc:
+        print(f"[DB] ensure_research_tables skipped or failed: {exc}")
+
 
 def get_cache(cache_key: str) -> Optional[Any]:
     """Retrieve unexpired payload from cache."""
