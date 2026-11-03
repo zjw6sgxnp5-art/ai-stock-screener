@@ -11,7 +11,11 @@
 - **组合风控体检**：提供 Top 6 理论试算模拟，以及现有持仓的 2×ATR 止损线与 30% 行业集中度硬上限健康检查。
 - **量化动量实验**：滑动窗口回测动量与 2×ATR 止损规则（明确标注为动量实验，不验证每日多因子）。
 - **备忘录可选**：支持调用本地 Gemini CLI 或 Grok CLI 生成买方投资审议备忘录；未配置时如实显示“待人工复核”，绝不使用模板造假兜底。
+- **权威投研文库（双库·518标的）**：集成外部机构全景投研库（标普500+纳指100，共 518 只标的，带 30 分制六维质地量化评分与 518 篇 Markdown 深度研报全文）与自研标普500买方避雷库（506 期专研，含四级避雷评级、错杀识别与独家证伪防线）。支持数据源 Tab 自由切换与多维筛选。
+- **个股档案双重视角对照（方案 A）**：个股档案顶部实时切换“外部机构全景研判”与“我的买方避雷研判”。针对 15 只纳指 100 非标普成分股，自动置灰禁用买方避雷切换（点不动），并提供悬停/点击浮动气泡提示。
 - **零构建工具**：基于 Python 标准库与原生 HTML/JS/CSS，打开即用。
+
+详细设计与实现细节请查阅技术文档：[权威投研文库与双库交叉研判系统设计文档](docs/RESEARCH_LIBRARY_DESIGN.md)。
 
 ## 前置条件
 
@@ -77,6 +81,10 @@ QQQ.US
 ## 常用接口
 
 ```text
+GET  /api/universe/stocks
+GET  /api/research/list?source=benchmark&page=1&page_size=12
+GET  /api/research/detail?symbol=AAPL.US
+GET  /api/research/report?symbol=AAPL.US
 GET  /api/analyze?symbol=NVDA.US&extra=1
 GET  /api/screener/run?symbols=NVDA.US,MSFT.US,AAPL.US&limit=3
 GET  /api/screener/run?universe=watchlist&limit=5
