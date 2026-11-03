@@ -6,6 +6,7 @@ supply-chain dependency, and 1-3 year catalysts.
 from typing import Any, Dict, List, Optional
 import json
 import re
+from backend.core.utils import normalize_symbol
 from backend.db import get_cache, set_cache
 
 
@@ -2198,7 +2199,7 @@ def build_company_and_product_dossier(symbol: str, company: Optional[Dict[str, A
     """
     Construct rich business profile and core products teardown.
     """
-    sym = symbol.upper()
+    sym = normalize_symbol(symbol)
     cache_key = f"product_kb_v6:{sym}"
     if not force_refresh:
         cached = get_cache(cache_key)

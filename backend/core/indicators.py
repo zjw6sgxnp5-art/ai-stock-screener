@@ -192,28 +192,6 @@ def compute_technical_summary(klines: List[Dict[str, Any]]) -> Dict[str, Any]:
     macd_res = macd(closes)
     bb_res = bollinger_bands(closes)
 
-    raw_tech = {
-        "last_close": last,
-        "ma20": round(ma20, 2) if ma20 else None,
-        "ma60": round(ma60, 2) if ma60 else None,
-        "ma200": round(ma200, 2) if ma200 else None,
-        "above_ma20": bool(last is not None and ma20 is not None and last >= ma20),
-        "above_ma60": bool(last is not None and ma60 is not None and last >= ma60),
-        "above_ma200": bool(last is not None and ma200 is not None and last >= ma200) if ma200 else None,
-        "returns": returns,
-        "trend_label": trend_label(returns["20d"]),
-        "volatility_20d": round(annualized_volatility(closes, 20), 1) if annualized_volatility(closes, 20) else None,
-        "max_drawdown_60d": round(max_drawdown(closes, 60), 1) if max_drawdown(closes, 60) else None,
-        "rsi14": round(rsi_val, 1) if rsi_val else None,
-        "macd": macd_res,
-        "bollinger": bb_res,
-        "atr14": atr14_val,
-        "atr_pct": atr_pct,
-        "trailing_stop_2atr": round(last - 2 * atr14_val, 2) if (last and atr14_val) else None,
-        "volume_ratio_20d": volume_ratio,
-        "candles": len(closes),
-    }
-
     # Generate institutional technical analysis modules
     price_ladder = build_support_resistance_ladder(last, highs, lows, closes, ma20, ma60, bb_res, round(last - 2 * atr14_val, 2) if (last and atr14_val) else None)
     trend_resonance = build_trend_resonance(last, ma20, ma60, ma200, returns)

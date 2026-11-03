@@ -3,6 +3,9 @@ Stock Screener Service:
 Multi-universe scanning (NDX 100 ∪ S&P 500 ∪ Top Volume ∪ Anomalies),
 multi-factor evaluation, cross-stock comparison, and daily top-6 recommendations.
 """
+import threading
+import time
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional
 
@@ -31,10 +34,9 @@ from backend.core.stock_registry import (
     get_company_zh_name,
     get_stock_sector,
 )
-import time
-from datetime import datetime, timezone
 
 # Cold start real-time progress tracker
+_PROGRESS_LOCK = threading.Lock()
 _SCREENER_PROGRESS: Dict[str, Any] = {
     "running": False,
     "total": 0,
@@ -44,10 +46,50 @@ _SCREENER_PROGRESS: Dict[str, Any] = {
 }
 
 
+def update_screener_progress(
+    running: Optional[bool] = None,
+    total: Optional[int] = None,
+    increment: bool = False,
+    current: Optional[int] = None,
+    current_symbol: Optional[str] = None,
+) -> None:
+    """Thread-safe update for screener progress tracker."""
+    global _SCREENER_PROGRESS
+    with _PROGRESS_LOCK:
+        if running is not None:
+            _SCREENER_PROGRESS["running"] = running
+        if total is not None:
+            _SCREENER_PROGRESS["total"] = total
+        if current is not None:
+            _SCREENER_PROGRESS["current"] = current
+        elif increment:
+            _SCREENER_PROGRESS["current"] = min(_SCREENER_PROGRESS["total"], _SCREENER_PROGRESS["current"] + 1)
+        if current_symbol is not None:
+            _SCREENER_PROGRESS["current_symbol"] = current_symbol
+        _SCREENER_PROGRESS["updated_at"] = time.time()
+
+
 def get_screener_progress() -> Dict[str, Any]:
     """Retrieve current cold-start scanning progress."""
     global _SCREENER_PROGRESS
-    return dict(_SCREENER_PROGRESS)
+    with _PROGRESS_LOCK:
+        return dict(_SCREENER_PROGRESS)
+
+
+def is_liquidity_passed(turnover: Optional[float], volume: Optional[float]) -> bool:
+    """Gate 1: Turnover >= $300M or Volume >= 800k shares."""
+    t = turnover or 0.0
+    v = volume or 0.0
+    return t >= 300_000_000 or v >= 800_000
+
+
+def is_trend_passed(technical: Optional[Dict[str, Any]]) -> bool:
+    """Gate 2: Above MA20 or 20d return > 0."""
+    if not technical:
+        return False
+    above_ma20 = bool(technical.get("above_ma20", False))
+    ret20 = (technical.get("returns", {}) or {}).get("20d") or 0.0
+    return above_ma20 or ret20 > 0
 
 
 def verdict_for_score(score: Optional[float]) -> str:
@@ -341,225 +383,224 @@ def run_screener(
     candidates: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
 
-    global _SCREENER_PROGRESS
-    _SCREENER_PROGRESS["running"] = True
-    _SCREENER_PROGRESS["total"] = len(symbols)
-    _SCREENER_PROGRESS["current"] = 0
-    _SCREENER_PROGRESS["current_symbol"] = "正在拉取批量基础行情..."
-    _SCREENER_PROGRESS["updated_at"] = time.time()
+    update_screener_progress(
+        running=True,
+        total=len(symbols),
+        current=0,
+        current_symbol="正在拉取批量基础行情...",
+    )
 
-    # Phase 1: 批量拉取所有标的的实时行情 (单次 CLI 调用)
-    batch_quotes, quote_errors = fetch_batch_quotes(symbols, timeout=20)
+    try:
+        # Phase 1: 批量拉取所有标的的实时行情 (单次 CLI 调用)
+        batch_quotes, quote_errors = fetch_batch_quotes(symbols, timeout=20)
 
-    symbols_to_deep_scan = []
-    for s in symbols:
-        norm_s = normalize_symbol(s)
-        zh_name = COMPANY_NAMES_ZH.get(s) or COMPANY_NAMES_ZH.get(norm_s) or s
-        if norm_s in quote_errors:
-            err_msg = quote_errors[norm_s]
-            is_busy = "429" in err_msg or "频控" in err_msg or "超时" in err_msg
-            candidates.append({
-                "symbol": norm_s,
-                "name": zh_name,
-                "last": None,
-                "turnover": 0.0,
-                "volume": 0,
-                "fetch_failed": True,
-                "status": "BUSY" if is_busy else "ERROR",
-                "fail_reason": "接口繁忙 (触发频控)" if is_busy else err_msg,
-                "score": None,
-                "verdict": "接口繁忙" if is_busy else "行情失败",
-                "tags": ["接口繁忙"] if is_busy else ["行情失败"],
-                "data_status": "BUSY",
-            })
-            errors.append({"symbol": norm_s, "message": err_msg})
-            continue
+        symbols_to_deep_scan = []
+        for s in symbols:
+            norm_s = normalize_symbol(s)
+            zh_name = COMPANY_NAMES_ZH.get(s) or COMPANY_NAMES_ZH.get(norm_s) or s
+            if norm_s in quote_errors:
+                err_msg = quote_errors[norm_s]
+                is_busy = "429" in err_msg or "频控" in err_msg or "超时" in err_msg
+                candidates.append({
+                    "symbol": norm_s,
+                    "name": zh_name,
+                    "last": None,
+                    "turnover": 0.0,
+                    "volume": 0,
+                    "fetch_failed": True,
+                    "status": "BUSY" if is_busy else "ERROR",
+                    "fail_reason": "接口繁忙 (触发频控)" if is_busy else err_msg,
+                    "score": None,
+                    "verdict": "接口繁忙" if is_busy else "行情失败",
+                    "tags": ["接口繁忙"] if is_busy else ["行情失败"],
+                    "data_status": "BUSY",
+                })
+                errors.append({"symbol": norm_s, "message": err_msg})
+                update_screener_progress(increment=True, current_symbol=norm_s)
+                continue
 
-        q = batch_quotes.get(norm_s, {})
-        turnover = q.get("turnover") or 0.0
-        volume = q.get("volume") or 0
+            q = batch_quotes.get(norm_s, {})
+            turnover = q.get("turnover") or 0.0
+            volume = q.get("volume") or 0
 
-        # Phase 2: 流动性硬规则评估 (单日成交额 ≥ $300M 或成交量 ≥ 80万股)
-        is_liquid = (turnover >= 300_000_000 or volume >= 800_000)
-        if not is_liquid:
-            # 真实因流动性不足淘汰的标的记录下结果，无需耗费 API 请求技术面与财务面
-            candidates.append({
-                "symbol": norm_s,
-                "name": zh_name or q.get("name") or norm_s,
-                "last": q.get("last"),
-                "change_pct": q.get("change_pct"),
-                "volume": volume,
-                "turnover": turnover,
-                "score": None,
-                "verdict": "流动性不足初筛淘汰",
-                "tags": ["流动性不足"],
-                "technical": {},
-                "valuation": None,
-                "rating": None,
-                "news_count": 0,
-                "factor_breakdown": None,
-                "data_status": "LIVE",
-                "fetch_failed": False,
-                "liquidity_passed": False,
-                "trend_passed": False,
-            })
-        else:
-            symbols_to_deep_scan.append((norm_s, q))
+            # Phase 2: 流动性硬规则评估 (单日成交额 ≥ $300M 或成交量 ≥ 80万股)
+            is_liquid = is_liquidity_passed(turnover, volume)
+            if not is_liquid:
+                # 真实因流动性不足淘汰的标的记录下结果，无需耗费 API 请求技术面与财务面
+                candidates.append({
+                    "symbol": norm_s,
+                    "name": zh_name or q.get("name") or norm_s,
+                    "last": q.get("last"),
+                    "change_pct": q.get("change_pct"),
+                    "volume": volume,
+                    "turnover": turnover,
+                    "score": None,
+                    "verdict": "流动性不足初筛淘汰",
+                    "tags": ["流动性不足"],
+                    "technical": {},
+                    "valuation": None,
+                    "rating": None,
+                    "news_count": 0,
+                    "factor_breakdown": None,
+                    "data_status": "LIVE",
+                    "fetch_failed": False,
+                    "liquidity_passed": False,
+                    "trend_passed": False,
+                })
+                update_screener_progress(increment=True, current_symbol=norm_s)
+            else:
+                symbols_to_deep_scan.append((norm_s, q))
 
-    # Phase 3: 对通过流动性闸门的标的，并发拉取日K并计算技术面与趋势指标 (线程池并发)
-    def _fetch_kline_trend(item):
-        norm_s, q = item
-        zh_name = COMPANY_NAMES_ZH.get(norm_s) or q.get("name") or norm_s
-        turnover = q.get("turnover") or 0.0
-        volume = q.get("volume") or 0
-        try:
+        # Phase 3: 对通过流动性闸门的标的，并发拉取日K并计算技术面与趋势指标 (线程池并发)
+        def _fetch_kline_trend(item):
+            norm_s, q = item
+            zh_name = COMPANY_NAMES_ZH.get(norm_s) or q.get("name") or norm_s
+            turnover = q.get("turnover") or 0.0
+            volume = q.get("volume") or 0
             try:
-                kline_res = run_longbridge(
-                    ["kline", norm_s, "--period", "day", "--count", "260", "--format", "json"],
-                    ttl_seconds=3600,
-                )
-                klines = extract_klines(kline_res)
-            except Exception:
-                from backend.services.market_data import fetch_yahoo_klines
-                klines = fetch_yahoo_klines(norm_s, count=260)
-                kline_res = {"source": "yahoo_finance", "data": klines}
+                try:
+                    kline_res = run_longbridge(
+                        ["kline", norm_s, "--period", "day", "--count", "260", "--format", "json"],
+                        ttl_seconds=3600,
+                    )
+                    klines = extract_klines(kline_res)
+                except Exception:
+                    from backend.services.market_data import fetch_yahoo_klines
+                    klines = fetch_yahoo_klines(norm_s, count=260)
+                    kline_res = {"source": "yahoo_finance", "data": klines}
 
-            if not klines:
-                raise AppError("无法获取日K线数据", 502)
+                if not klines:
+                    raise AppError("无法获取日K线数据", 502)
 
-            technical = compute_technical_summary(klines)
-            above_ma20 = technical.get("above_ma20", False)
-            ret20 = (technical.get("returns", {}) or {}).get("20d", 0.0)
-            is_trend = bool(above_ma20 or ret20 > 0)
+                technical = compute_technical_summary(klines)
+                is_trend = is_trend_passed(technical)
 
-            if not is_trend and skip_trend_culled_deep_scan:
+                if not is_trend and skip_trend_culled_deep_scan:
+                    update_screener_progress(increment=True, current_symbol=norm_s)
+                    return {
+                        "survivor": None,
+                        "candidate": {
+                            "symbol": norm_s,
+                            "name": zh_name,
+                            "last": q.get("last"),
+                            "change_pct": q.get("change_pct"),
+                            "volume": volume,
+                            "turnover": turnover,
+                            "score": None,
+                            "verdict": "跌破20日线初筛淘汰",
+                            "tags": ["趋势破位"],
+                            "technical": technical,
+                            "valuation": None,
+                            "rating": None,
+                            "news_count": 0,
+                            "factor_breakdown": None,
+                            "data_status": "LIVE",
+                            "fetch_failed": False,
+                            "liquidity_passed": True,
+                            "trend_passed": False,
+                        }
+                    }
+                else:
+                    return {
+                        "survivor": (norm_s, q, kline_res, technical, is_trend),
+                        "candidate": None
+                    }
+            except AppError as exc:
+                update_screener_progress(increment=True, current_symbol=norm_s)
+                is_busy = exc.status == 429 or "429" in exc.message or "频控" in exc.message or "超时" in exc.message
                 return {
                     "survivor": None,
                     "candidate": {
                         "symbol": norm_s,
                         "name": zh_name,
                         "last": q.get("last"),
-                        "change_pct": q.get("change_pct"),
-                        "volume": volume,
                         "turnover": turnover,
+                        "volume": volume,
+                        "fetch_failed": True,
+                        "status": "BUSY" if is_busy else "ERROR",
+                        "fail_reason": "接口繁忙 (触发频控)" if is_busy else exc.message,
                         "score": None,
-                        "verdict": "跌破20日线初筛淘汰",
-                        "tags": ["趋势破位"],
-                        "technical": technical,
-                        "valuation": None,
-                        "rating": None,
-                        "news_count": 0,
-                        "factor_breakdown": None,
-                        "data_status": "LIVE",
-                        "fetch_failed": False,
-                        "liquidity_passed": True,
-                        "trend_passed": False,
-                    }
+                        "verdict": "接口繁忙" if is_busy else "K线失败",
+                        "tags": ["接口繁忙"] if is_busy else ["K线失败"],
+                        "data_status": "BUSY",
+                    },
+                    "error": {"symbol": norm_s, "message": exc.message}
                 }
-            else:
+            except Exception as exc:
+                update_screener_progress(increment=True, current_symbol=norm_s)
                 return {
-                    "survivor": (norm_s, q, kline_res, technical, is_trend),
-                    "candidate": None
-                }
-        except AppError as exc:
-            is_busy = exc.status == 429 or "429" in exc.message or "频控" in exc.message or "超时" in exc.message
-            return {
-                "survivor": None,
-                "candidate": {
-                    "symbol": norm_s,
-                    "name": zh_name,
-                    "last": q.get("last"),
-                    "turnover": turnover,
-                    "volume": volume,
-                    "fetch_failed": True,
-                    "status": "BUSY" if is_busy else "ERROR",
-                    "fail_reason": "接口繁忙 (触发频控)" if is_busy else exc.message,
-                    "score": None,
-                    "verdict": "接口繁忙" if is_busy else "K线失败",
-                    "tags": ["接口繁忙"] if is_busy else ["K线失败"],
-                    "data_status": "BUSY",
-                },
-                "error": {"symbol": norm_s, "message": exc.message}
-            }
-        except Exception as exc:
-            return {
-                "survivor": None,
-                "candidate": {
-                    "symbol": norm_s,
-                    "name": zh_name,
-                    "last": q.get("last"),
-                    "turnover": turnover,
-                    "volume": volume,
-                    "fetch_failed": True,
-                    "status": "ERROR",
-                    "fail_reason": f"K线异常: {exc}",
-                    "score": None,
-                    "verdict": "K线异常",
-                    "tags": ["异常"],
-                    "data_status": "ERROR",
-                },
-                "error": {"symbol": norm_s, "message": f"K线获取异常：{exc}"}
-            }
-
-    trend_survivors = []
-    if symbols_to_deep_scan:
-        k_workers = max(1, min(6, len(symbols_to_deep_scan)))
-        with ThreadPoolExecutor(max_workers=k_workers) as executor:
-            for outcome in executor.map(_fetch_kline_trend, symbols_to_deep_scan):
-                if outcome.get("survivor"):
-                    trend_survivors.append(outcome["survivor"])
-                if outcome.get("candidate"):
-                    candidates.append(outcome["candidate"])
-                if outcome.get("error"):
-                    errors.append(outcome["error"])
-
-    # Phase 4: 对通过趋势闸门的标的，执行多因子（估值、评级、财报、新闻）并发扫描
-    worker_count = max(1, min(4, len(trend_survivors)))
-    if trend_survivors:
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            trend_map = {sym: is_tr for sym, q, k_res, tech, is_tr in trend_survivors}
-            futures = {
-                executor.submit(fetch_screener_candidate, sym, dynamic_weights, risk_multiplier, q, k_res, tech): sym
-                for sym, q, k_res, tech, is_tr in trend_survivors
-            }
-            for future in as_completed(futures):
-                sym = futures[future]
-                is_tr = trend_map.get(sym, True)
-                _SCREENER_PROGRESS["current"] = min(_SCREENER_PROGRESS["total"], _SCREENER_PROGRESS["current"] + 1)
-                _SCREENER_PROGRESS["current_symbol"] = sym
-                _SCREENER_PROGRESS["updated_at"] = time.time()
-                try:
-                    c = future.result()
-                    c["trend_passed"] = is_tr
-                    c["liquidity_passed"] = True
-                    if not is_tr:
-                        sc_val = _numeric_score(c.get("score"))
-                        c["verdict"] = "趋势破位 (未评分)" if sc_val is None else f"趋势破位 ({sc_val:.1f}分)"
-                        c_tags = c.get("tags") or []
-                        if "趋势破位" not in c_tags:
-                            c_tags.insert(0, "趋势破位")
-                        c["tags"] = c_tags
-                    candidates.append(c)
-                    if c.get("fetch_failed"):
-                        errors.append({"symbol": sym, "message": c.get("fail_reason", "取数失败")})
-                except Exception as exc:
-                    candidates.append({
-                        "symbol": sym,
-                        "name": COMPANY_NAMES_ZH.get(sym, sym),
+                    "survivor": None,
+                    "candidate": {
+                        "symbol": norm_s,
+                        "name": zh_name,
+                        "last": q.get("last"),
+                        "turnover": turnover,
+                        "volume": volume,
                         "fetch_failed": True,
                         "status": "ERROR",
-                        "fail_reason": f"扫描异常: {exc}",
+                        "fail_reason": f"K线异常: {exc}",
                         "score": None,
-                        "verdict": "扫描异常",
+                        "verdict": "K线异常",
                         "tags": ["异常"],
                         "data_status": "ERROR",
-                    })
-                    errors.append({"symbol": sym, "message": f"筛选异常：{exc}"})
+                    },
+                    "error": {"symbol": norm_s, "message": f"K线获取异常：{exc}"}
+                }
 
-    _SCREENER_PROGRESS["running"] = False
-    _SCREENER_PROGRESS["current"] = _SCREENER_PROGRESS["total"]
-    _SCREENER_PROGRESS["current_symbol"] = "已完成"
-    _SCREENER_PROGRESS["updated_at"] = time.time()
+        trend_survivors = []
+        if symbols_to_deep_scan:
+            k_workers = max(1, min(6, len(symbols_to_deep_scan)))
+            with ThreadPoolExecutor(max_workers=k_workers) as executor:
+                for outcome in executor.map(_fetch_kline_trend, symbols_to_deep_scan):
+                    if outcome.get("survivor"):
+                        trend_survivors.append(outcome["survivor"])
+                    if outcome.get("candidate"):
+                        candidates.append(outcome["candidate"])
+                    if outcome.get("error"):
+                        errors.append(outcome["error"])
+
+        # Phase 4: 对通过趋势闸门的标的，执行多因子（估值、评级、财报、新闻）并发扫描
+        worker_count = max(1, min(4, len(trend_survivors)))
+        if trend_survivors:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                trend_map = {sym: is_tr for sym, q, k_res, tech, is_tr in trend_survivors}
+                futures = {
+                    executor.submit(fetch_screener_candidate, sym, dynamic_weights, risk_multiplier, q, k_res, tech): sym
+                    for sym, q, k_res, tech, is_tr in trend_survivors
+                }
+                for future in as_completed(futures):
+                    sym = futures[future]
+                    is_tr = trend_map.get(sym, True)
+                    update_screener_progress(increment=True, current_symbol=sym)
+                    try:
+                        c = future.result()
+                        c["trend_passed"] = is_tr
+                        c["liquidity_passed"] = True
+                        if not is_tr:
+                            sc_val = _numeric_score(c.get("score"))
+                            c["verdict"] = "趋势破位 (未评分)" if sc_val is None else f"趋势破位 ({sc_val:.1f}分)"
+                            c_tags = c.get("tags") or []
+                            if "趋势破位" not in c_tags:
+                                c_tags.insert(0, "趋势破位")
+                            c["tags"] = c_tags
+                        candidates.append(c)
+                        if c.get("fetch_failed"):
+                            errors.append({"symbol": sym, "message": c.get("fail_reason", "取数失败")})
+                    except Exception as exc:
+                        candidates.append({
+                            "symbol": sym,
+                            "name": COMPANY_NAMES_ZH.get(sym, sym),
+                            "fetch_failed": True,
+                            "status": "ERROR",
+                            "fail_reason": f"扫描异常: {exc}",
+                            "score": None,
+                            "verdict": "扫描异常",
+                            "tags": ["异常"],
+                            "data_status": "ERROR",
+                        })
+                        errors.append({"symbol": sym, "message": f"筛选异常：{exc}"})
+    finally:
+        update_screener_progress(running=False, current=len(symbols), current_symbol="已完成")
 
     ranked = sorted(
         candidates,
@@ -725,7 +766,7 @@ def get_daily_screener_recommendations(force: bool = False) -> Dict[str, Any]:
     # 真实漏斗过滤 (规矩13：这22只大票均过得了流动性，第一级直接展示候选池只数，拿掉多余的流动性通过22/22，保留趋势闸门与评分截断)
     passed_liquidity = [
         c for c in valid_candidates
-        if c.get("liquidity_passed", True) and ((c.get("turnover") or 0) >= 300_000_000 or (c.get("volume") or 0) >= 800_000)
+        if c.get("liquidity_passed", True) and is_liquidity_passed(c.get("turnover"), c.get("volume"))
     ]
     liquidity_culled = [
         c for c in valid_candidates
@@ -735,12 +776,16 @@ def get_daily_screener_recommendations(force: bool = False) -> Dict[str, Any]:
     # Gate 1: 趋势硬规则 (站上20日均线 或 20日收益为正)
     passed_trend = [
         c for c in passed_liquidity
-        if c.get("technical", {}).get("above_ma20") or (c.get("technical", {}).get("returns", {}).get("20d") or 0) > 0
+        if is_trend_passed(c.get("technical"))
     ]
     trend_culled = [c for c in passed_liquidity if c not in passed_trend]
 
     # Gate 2: 综合评分排序与截断。不足 65 分不进 Top 6，也不降到 55 分补位。
-    top_candidates = [c for c in passed_trend if (_numeric_score(c.get("score")) or -1) >= 65][:6]
+    top_candidates = sorted(
+        [c for c in passed_trend if (_numeric_score(c.get("score")) or -1) >= 65],
+        key=lambda c: _numeric_score(c.get("score")) or -1,
+        reverse=True
+    )[:6]
 
     funnel_pipeline = {
         "raw_universe": {
@@ -992,7 +1037,7 @@ def get_daily_screener_recommendations(force: bool = False) -> Dict[str, Any]:
             portfolio_plan = None
 
     result = {
-        "ok": bool(top_picks),
+        "ok": True,
         "generated_at": utc_now_iso(),
         "universe_definition": f"核心高流动性股票池 (共 {total_scanned} 只候选，已剔除指数ETF)",
         "universe_size": total_scanned,

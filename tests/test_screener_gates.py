@@ -4,6 +4,7 @@ Unit tests for multi-factor screener gates and scoring attribution.
 import unittest
 
 from backend.core.financial import build_factor_breakdown
+from backend.services.screener import is_liquidity_passed, is_trend_passed
 
 
 class TestScreenerGates(unittest.TestCase):
@@ -15,8 +16,7 @@ class TestScreenerGates(unittest.TestCase):
             {"turnover": 400_000_000, "volume": 900_000},   # Both pass
         ]
         for c in liquid_cases:
-            is_liquid = (c["turnover"] >= 300_000_000 or c["volume"] >= 800_000)
-            self.assertTrue(is_liquid, f"Expected {c} to pass liquidity gate")
+            self.assertTrue(is_liquidity_passed(c["turnover"], c["volume"]), f"Expected {c} to pass liquidity gate")
 
         illiquid_cases = [
             {"turnover": 50_000_000, "volume": 200_000},
@@ -24,28 +24,27 @@ class TestScreenerGates(unittest.TestCase):
             {"turnover": 0, "volume": 0},
         ]
         for c in illiquid_cases:
-            is_liquid = (c["turnover"] >= 300_000_000 or c["volume"] >= 800_000)
-            self.assertFalse(is_liquid, f"Expected {c} to fail liquidity gate")
+            self.assertFalse(is_liquidity_passed(c["turnover"], c["volume"]), f"Expected {c} to fail liquidity gate")
 
     def test_trend_gate_rules(self):
         # Criteria: above_ma20 == True or 20d return > 0
         pass_cases = [
-            {"above_ma20": True, "ret20": -2.5},
-            {"above_ma20": False, "ret20": 4.2},
-            {"above_ma20": True, "ret20": 5.0},
+            {"above_ma20": True, "returns": {"20d": -2.5}},
+            {"above_ma20": False, "returns": {"20d": 4.2}},
+            {"above_ma20": True, "returns": {"20d": 5.0}},
         ]
         for c in pass_cases:
-            is_trend = bool(c["above_ma20"] or c["ret20"] > 0)
-            self.assertTrue(is_trend)
+            self.assertTrue(is_trend_passed(c))
 
         fail_cases = [
-            {"above_ma20": False, "ret20": -0.1},
-            {"above_ma20": False, "ret20": -15.0},
-            {"above_ma20": False, "ret20": 0.0},
+            {"above_ma20": False, "returns": {"20d": -0.1}},
+            {"above_ma20": False, "returns": {"20d": -15.0}},
+            {"above_ma20": False, "returns": {"20d": 0.0}},
+            None,
+            {},
         ]
         for c in fail_cases:
-            is_trend = bool(c["above_ma20"] or c["ret20"] > 0)
-            self.assertFalse(is_trend)
+            self.assertFalse(is_trend_passed(c))
 
     def test_factor_breakdown_composite_score(self):
         quote = {

@@ -91,7 +91,7 @@ class TestPortfolioAllocator(unittest.TestCase):
             macro_exposure_limit_pct=80.0,
         )
 
-        self.assertTrue(result["total_capital"], 100000.0)
+        self.assertEqual(result["total_capital"], 100000.0)
         allocations = result["allocations"]
         self.assertEqual(len(allocations), 3)
 

@@ -323,6 +323,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def serve_static(self, request_path: str) -> None:
         """Serve static assets from web/ directory."""
+        if request_path.startswith("/api/"):
+            raise AppError("未知接口路径。", 404)
         if request_path == "/":
             request_path = "/index.html"
         safe_parts = [part for part in request_path.split("/") if part and part not in (".", "..")]
