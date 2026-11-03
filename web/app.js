@@ -271,6 +271,7 @@ let currentSuggestions = [];
 
 window.addEventListener("DOMContentLoaded", () => {
   elements.autocompleteDropdown = document.getElementById("autocompleteDropdown");
+  refreshDataSourceStatus();
   elements.searchInputWrapper = document.getElementById("searchInputWrapper");
   elements.btnSubmitSearch = document.getElementById("btnSubmitSearch");
   elements.btnGlobalHistory = document.getElementById("btnGlobalHistory");
@@ -976,9 +977,45 @@ async function hotSyncPrice() {
 // Rendering: Header & Stage
 // ==============================================================================
 
+// ---- 数据源模式提示：长桥离线（仅 Yahoo 降级）时不评分、不选股，需明确告知 ----
+const YAHOO_MODE_NOTICE = "当前长桥 CLI 未连接，仅 Yahoo 降级模式：只提供真实行情与日K，不生成多因子评分，选股 Top 6 为空。终端执行 longbridge auth login 后刷新即可恢复完整选股。";
+async function refreshDataSourceStatus() {
+  try {
+    const resp = await fetch("/api/datasources/longbridge/status");
+    const data = await resp.json();
+    state.longbridgeOnline = !!(data && data.ok);
+  } catch (e) {
+    state.longbridgeOnline = null; // 未知，不提示
+  }
+  applyYahooModeNotice();
+  return state.longbridgeOnline;
+}
+function yahooModeNoticeHtml() {
+  return `<div class="card-loading-placeholder yahoo-mode-notice" role="status">⚠️ ${YAHOO_MODE_NOTICE}</div>`;
+}
+function applyYahooModeNotice() {
+  const show = state.longbridgeOnline === false;
+  const targets = [elements.dossierView];
+  targets.forEach(el => {
+    if (!el || !el.parentNode) return;
+    const id = el.id ? `yahooNotice-${el.id}` : null;
+    if (!id) return;
+    let n = document.getElementById(id);
+    if (show && !n) {
+      n = document.createElement("div");
+      n.id = id;
+      n.innerHTML = yahooModeNoticeHtml();
+      el.parentNode.insertBefore(n, el);
+    } else if (!show && n) {
+      n.remove();
+    }
+  });
+}
+
 function renderDossier() {
   if (!state.currentDossier) return;
   renderHeaderInfo();
+  applyYahooModeNotice();
   renderDossierPerspectives();
   switchTopicTab(state.activeModule || "business_and_industry");
 }
@@ -3279,7 +3316,9 @@ function renderDailyPicks(screener) {
   if (!displayPicks.length) {
     grid.innerHTML = state.screenerFilter === "watchlist"
       ? '<div class="card-loading-placeholder">你的自选池中暂无今日入选 Top 6 的标的（可查看下方淘汰原因明细表）</div>'
-      : '<div class="card-loading-placeholder">当前宏观环境下暂无符合买方闸门的标的</div>';
+      : (state.longbridgeOnline === false
+        ? yahooModeNoticeHtml()
+        : '<div class="card-loading-placeholder">当前宏观环境下暂无符合买方闸门的标的</div>');
   } else {
     grid.innerHTML = displayPicks.map((p, idx) => {
       const hasChange = p.change_pct != null;
@@ -3416,6 +3455,7 @@ async function runCustomScreener() {
   if (tbody) tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">正在并发请求行情并计算多因子分...</td></tr>';
 
   try {
+    if (state.longbridgeOnline == null) await refreshDataSourceStatus();
     const res = await fetch(`/api/screener/run?symbols=${encodeURIComponent(symbols)}&limit=25`);
     const data = await res.json();
     const rows = data.all || data.rows || (Array.isArray(data) ? data : null);
