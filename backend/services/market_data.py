@@ -5,6 +5,7 @@ network graph builder, timeline extraction, and fallback resilience.
 import json
 import os
 import re
+import shutil
 import ssl
 import subprocess
 import threading
@@ -146,6 +147,23 @@ def longbridge_status() -> Dict[str, Any]:
         }
 
 
+_LB_BIN_CHECK: Dict[str, Any] = {"at": 0.0, "ok": None}
+_LB_BIN_CHECK_TTL = 60.0
+
+
+def longbridge_binary_available() -> bool:
+    """Cheap, cached (60s) check whether the Longbridge CLI binary is on PATH.
+
+    Lets callers fail fast in Yahoo-only mode instead of paying the 450ms
+    serialized pacing sleep for every CLI call that is doomed to fail.
+    """
+    now = time.time()
+    if _LB_BIN_CHECK["ok"] is None or now - _LB_BIN_CHECK["at"] > _LB_BIN_CHECK_TTL:
+        _LB_BIN_CHECK["ok"] = bool(shutil.which(LONG_BRIDGE_BIN)) or os.path.isfile(LONG_BRIDGE_BIN)
+        _LB_BIN_CHECK["at"] = now
+    return bool(_LB_BIN_CHECK["ok"])
+
+
 def run_longbridge(args: List[str], ttl_seconds: int, timeout: int = DEFAULT_TIMEOUT, max_retries: int = 1) -> Dict[str, Any]:
     """
     Run Longbridge CLI command with global lock, serialized 450ms pacing,
@@ -156,6 +174,9 @@ def run_longbridge(args: List[str], ttl_seconds: int, timeout: int = DEFAULT_TIM
     if cached is not None:
         cached["_cached"] = True
         return cached
+
+    if not longbridge_binary_available():
+        raise AppError("未检测到长桥 CLI，请先安装并配置 longbridge。", 503)
 
     command = [LONG_BRIDGE_BIN] + args
     last_completed = None
