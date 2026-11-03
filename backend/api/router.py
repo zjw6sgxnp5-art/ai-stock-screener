@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
+from backend.api.security import enforce_host_and_token, origin_matches, validate_symbol_list
 from backend.config import AppError, STATIC_DIR
 from backend.core.utils import (
     is_valid_symbol,
@@ -51,25 +52,18 @@ from backend.services.screener import (
 from backend.services.tech_radar import get_tech_catalysts
 
 
-def is_safe_origin(origin: Optional[str]) -> bool:
-    """Validate whether an Origin/Referer header is local/trusted."""
+def is_safe_origin(origin: Optional[str], host: Optional[str] = None) -> bool:
+    """Origin/Referer is trusted only if same-origin with Host or in AI_STOCK_ALLOWED_ORIGINS.
+    Absent header => True (non-browser client; covered by optional API token)."""
     if not origin:
         return True
-    origin = origin.strip().lower()
-    if origin in ("null", "file://"):
-        return True
-    try:
-        parsed = urlparse(origin)
-        hostname = (parsed.hostname or "").lower()
-        return hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "testserver")
-    except Exception:
-        return False
+    return origin_matches(origin, host)
 
 
 def apply_cors_headers(handler: BaseHTTPRequestHandler) -> None:
     """Apply safe CORS headers if origin is trusted. Untrusted external origins are blocked."""
     origin = handler.headers.get("Origin")
-    if origin and is_safe_origin(origin):
+    if origin and is_safe_origin(origin, handler.headers.get("Host")):
         handler.send_header("Access-Control-Allow-Origin", origin)
         handler.send_header("Access-Control-Allow-Credentials", "true")
         handler.send_header("Vary", "Origin")
@@ -77,11 +71,11 @@ def apply_cors_headers(handler: BaseHTTPRequestHandler) -> None:
 
 def sanitize_symbol(raw: Any, default: str = "") -> str:
     """Sanitize and validate a single stock symbol. Returns default if invalid."""
-    if not raw or not isinstance(raw, str):
+    if raw is None or raw == "":
         return default
+    if not isinstance(raw, str) or not is_valid_symbol(raw.strip()):
+        raise AppError("股票代码格式非法，仅允许字母、数字、. - ^。", 400)
     raw_clean = raw.strip()
-    if not is_valid_symbol(raw_clean):
-        return default
     cleaned = normalize_symbol(raw_clean)
     if not is_valid_symbol(cleaned):
         return default
@@ -132,7 +126,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         """Handle CORS pre-flight requests with strict origin verification."""
         origin = self.headers.get("Origin")
-        if origin and not is_safe_origin(origin):
+        if origin and not is_safe_origin(origin, self.headers.get("Host")):
             self.send_response(403)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
@@ -140,12 +134,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         self.send_response(204)
-        if origin and is_safe_origin(origin):
+        if origin:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Credentials", "true")
             self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-API-Token")
         self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
 
@@ -153,6 +147,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         """Handle GET requests."""
         parsed = urlparse(self.path)
         try:
+            enforce_host_and_token(self.command, self.headers)
             if parsed.path == "/api/health":
                 json_response(
                     self,
@@ -266,7 +261,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 universe = params.get("universe", ["custom"])[0]
                 default_symbols = [item["symbol"] for item in list_watchlist()] if universe == "watchlist" else None
-                symbols = parse_symbol_list(params.get("symbols", [""])[0], default=default_symbols)
+                symbols = parse_symbol_list(validate_symbol_list(params.get("symbols", [""])[0], is_valid_symbol), default=default_symbols)
                 limit = int(params.get("limit", ["10"])[0] or 10)
                 res = run_screener(symbols, limit=max(1, min(limit, 30)))
                 if isinstance(res, dict) and "ok" not in res:
@@ -275,7 +270,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/compare":
                 params = parse_qs(parsed.query)
-                symbols = parse_symbol_list(params.get("symbols", [""])[0], max_count=5)
+                symbols = parse_symbol_list(validate_symbol_list(params.get("symbols", [""])[0], is_valid_symbol), max_count=5)
                 res = run_compare(symbols)
                 if isinstance(res, dict) and "ok" not in res:
                     res["ok"] = True
@@ -328,9 +323,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         """Handle POST requests with CSRF protection and symbol validation."""
         parsed = urlparse(self.path)
         try:
+            enforce_host_and_token(self.command, self.headers)
             origin = self.headers.get("Origin")
             referer = self.headers.get("Referer")
-            if (origin and not is_safe_origin(origin)) or (referer and not is_safe_origin(referer)):
+            host = self.headers.get("Host")
+            if (origin and not is_safe_origin(origin, host)) or (referer and not is_safe_origin(referer, host)):
                 json_response(self, {"ok": False, "error": "403 Forbidden: 跨域写操作已被安全拦截。"}, 403)
                 return
 

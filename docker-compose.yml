@@ -20,6 +20,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
-      # 可选：以只读模式挂载宿主机长桥凭证（若无需长桥行情可注释本行）
-      - ${HOME}/.longbridge:/root/.longbridge:ro
+      # 需可写：长桥 CLI 会自动刷新 OAuth token 写入 ~/.longbridge/openapi/tokens/（见 docs/SECURITY.md；不需要长桥可注释本行）
+      - ${HOME}/.longbridge:/root/.longbridge
     restart: unless-stopped

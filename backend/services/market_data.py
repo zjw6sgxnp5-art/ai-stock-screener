@@ -248,7 +248,7 @@ def fetch_yahoo_quotes_batch(symbols: List[str], timeout: int = 8) -> Dict[str, 
     """Fetch quotes concurrently from Yahoo Finance as a resilient fallback."""
     if not symbols:
         return {}
-    ctx = ssl._create_unverified_context()
+    ctx = ssl.create_default_context()
     results: Dict[str, Dict[str, Any]] = {}
 
     def _fetch_one(s: str) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -318,7 +318,7 @@ def fetch_yahoo_klines(symbol: str, count: int = 260) -> List[Dict[str, Any]]:
     if cached is not None and isinstance(cached, list) and len(cached) > 0:
         return cached
 
-    ctx = ssl._create_unverified_context()
+    ctx = ssl.create_default_context()
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{clean_sym}?interval=1d&range=1y"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
