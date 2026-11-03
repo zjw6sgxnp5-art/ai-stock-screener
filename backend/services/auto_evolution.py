@@ -440,7 +440,9 @@ def get_autonomous_status() -> Dict[str, Any]:
 
 def start_autonomous_daemon() -> None:
     """
-    Start background daemon only if explicitly invoked.
-    Does NOT auto-tune model on startup to avoid unverified weight mutation.
+    预留接口，当前为空操作（no-op），且没有任何地方调用。
+
+    有意不在启动时自动运行后台调参：未经样本外验证的权重自动变更风险较高。
+    如需启用，请显式调用并先补充验证与开关（环境变量）后再接入 app.py。
     """
-    pass
+    return None

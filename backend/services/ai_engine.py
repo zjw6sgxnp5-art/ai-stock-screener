@@ -98,7 +98,7 @@ def run_cli_model(model_name: str, prompt: str, timeout: int = 50) -> Dict[str, 
             raw = completed.stdout if completed.returncode == 0 else (completed.stdout + "\n" + completed.stderr)
             output_text = clean_cli_output(raw)
         except subprocess.TimeoutExpired:
-            output_text = "【Grok CLI 响应超时】50 秒内未返回结果，请检查网络连接。"
+            output_text = f"【Grok CLI 响应超时】{timeout} 秒内未返回结果，请检查网络连接。"
         except Exception as exc:
             output_text = f"【Grok CLI 调用异常】{exc}"
 
@@ -109,7 +109,7 @@ def run_cli_model(model_name: str, prompt: str, timeout: int = 50) -> Dict[str, 
             raw = completed.stdout if completed.returncode == 0 else (completed.stdout + "\n" + completed.stderr)
             output_text = clean_cli_output(raw)
         except subprocess.TimeoutExpired:
-            output_text = "【Gemini CLI 响应超时】50 秒内未返回结果，请检查网络连接。"
+            output_text = f"【Gemini CLI 响应超时】{timeout} 秒内未返回结果，请检查网络连接。"
         except Exception as exc:
             output_text = f"【Gemini CLI 调用异常】{exc}"
 
