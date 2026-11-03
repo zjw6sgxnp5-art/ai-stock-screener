@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlparse
 
-from backend.config import AppError, STATIC_DIR
+from backend.config import ATR_STOP_MULTIPLIER, AppError, STATIC_DIR
 from backend.core.utils import (
     is_valid_symbol,
     normalize_symbol,
@@ -49,6 +49,9 @@ from backend.services.screener import (
     run_screener,
 )
 from backend.services.tech_radar import get_tech_catalysts
+
+
+BACKTEST_RANGES = ("6mo", "1y", "2y", "5y")
 
 
 def is_safe_origin(origin: Optional[str]) -> bool:
@@ -293,13 +296,23 @@ class RequestHandler(BaseHTTPRequestHandler):
                 range_str = params.get("range", ["2y"])[0]
                 rebal_freq = int(params.get("rebalance_freq", ["15"])[0] or 15)
                 top_n = int(params.get("top_n", ["3"])[0] or 3)
-                atr_mult = float(params.get("atr_mult", ["2.0"])[0] or 2.0)
+                atr_mult = number_from(params.get("atr_mult", [""])[0]) or ATR_STOP_MULTIPLIER
+                cost_bps = number_from(params.get("cost_bps", [""])[0])
+                slippage_bps = number_from(params.get("slippage_bps", [""])[0])
+                bt_symbols = parse_symbol_list(params.get("symbols", [""])[0], max_count=50)
+                benchmark = sanitize_symbol(params.get("benchmark", [""])[0], "SPY.US").replace(".US", "")
                 force = params.get("force", ["0"])[0] in ("1", "true", "yes")
+                if range_str not in BACKTEST_RANGES:
+                    raise AppError(f"range 仅支持 {', '.join(BACKTEST_RANGES)}", 400)
                 json_response(self, run_quantitative_backtest(
+                    symbols=bt_symbols or None,
+                    benchmark_symbol=benchmark,
                     range_str=range_str,
-                    rebalance_freq=rebal_freq,
-                    top_n=top_n,
-                    atr_mult=atr_mult,
+                    rebalance_freq=max(1, min(rebal_freq, 120)),
+                    top_n=max(1, min(top_n, 10)),
+                    atr_mult=max(0.5, min(float(atr_mult), 10.0)),
+                    cost_bps=None if cost_bps is None else max(0.0, min(cost_bps, 500.0)),
+                    slippage_bps=None if slippage_bps is None else max(0.0, min(slippage_bps, 500.0)),
                     force_refresh=force
                 ))
                 return
@@ -307,10 +320,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 range_str = params.get("range", ["2y"])[0]
                 top_n = int(params.get("top_n", ["2"])[0] or 2)
+                bt_symbols = parse_symbol_list(params.get("symbols", [""])[0], max_count=50)
                 force = params.get("force", ["0"])[0] in ("1", "true", "yes")
+                if range_str not in BACKTEST_RANGES:
+                    raise AppError(f"range 仅支持 {', '.join(BACKTEST_RANGES)}", 400)
                 json_response(self, run_sensitivity_analysis(
                     range_str=range_str,
-                    top_n=top_n,
+                    top_n=max(1, min(top_n, 10)),
+                    symbols=bt_symbols or None,
                     force_refresh=force
                 ))
                 return

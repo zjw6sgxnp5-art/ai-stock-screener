@@ -1,3 +1,4 @@
+import _testdb  # noqa: F401
 """
 Unit tests for multi-factor screener gates and scoring attribution.
 """

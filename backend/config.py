@@ -81,3 +81,21 @@ class AppError(Exception):
         self.message = message
         self.status = status
         self.details = details or {}
+
+
+# ---- Strategy / backtest shared constants (single source of truth for live + backtest + README) ----
+ATR_PERIOD = 14
+ATR_STOP_MULTIPLIER = float(os.environ.get("AI_STOCK_ATR_MULT", "2.0"))
+# One-way trading cost (commission + fees) and slippage, in basis points. Default total ~5bp per side.
+BACKTEST_COST_BPS = float(os.environ.get("AI_STOCK_BT_COST_BPS", "3.0"))
+BACKTEST_SLIPPAGE_BPS = float(os.environ.get("AI_STOCK_BT_SLIPPAGE_BPS", "2.0"))
+DEFAULT_BACKTEST_UNIVERSE = [
+    s.strip().upper()
+    for s in os.environ.get(
+        "AI_STOCK_BT_UNIVERSE",
+        "AAPL,MSFT,NVDA,AMZN,GOOGL,JNJ,JPM,XOM,PG,CAT,AMD,TSLA",
+    ).split(",")
+    if s.strip()
+]
+# Fraction of the simulation window used as in-sample for sensitivity analysis (rest = out-of-sample).
+SENSITIVITY_IS_FRACTION = float(os.environ.get("AI_STOCK_BT_IS_FRACTION", "0.6"))

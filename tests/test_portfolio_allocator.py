@@ -1,3 +1,4 @@
+import _testdb  # noqa: F401
 """
 Unit tests for ATR risk parity portfolio allocation and sector cap constraints.
 """
